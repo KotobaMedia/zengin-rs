@@ -75,13 +75,13 @@ pub(crate) fn write(file: &File, format: OutputFormat) -> Result<Vec<u8>, Error>
     file.validate()?;
 
     match format.encoding {
-        Encoding::Ascii => {}
+        Encoding::Ascii | Encoding::Jis => {}
         other => return Err(Error::UnsupportedEncoding(other)),
     }
 
     let mut records = Vec::with_capacity(file.details.len() + 3);
-    records.push(render_header(&file.header)?);
-    records.extend(render_details(&file.details)?);
+    records.push(render_header(&file.header, format.encoding)?);
+    records.extend(render_details(&file.details, format.encoding)?);
     records.push(render_trailer(&file.trailer)?);
     records.push(render_end(&file.end));
 
@@ -159,8 +159,6 @@ fn split_records(input: &[u8]) -> Result<Vec<&[u8]>, Error> {
         return Err(Error::InvalidInput("input is empty".to_string()));
     }
 
-    ensure_ascii(input)?;
-
     if input.contains(&b'\n') {
         let mut lines = input.split(|byte| *byte == b'\n').collect::<Vec<_>>();
         if lines.last().is_some_and(|line| line.is_empty()) {
@@ -211,21 +209,6 @@ fn split_records(input: &[u8]) -> Result<Vec<&[u8]>, Error> {
 
 fn strip_optional_eof(input: &[u8]) -> &[u8] {
     input.strip_suffix(&[0x1a]).unwrap_or(input)
-}
-
-fn ensure_ascii(input: &[u8]) -> Result<(), Error> {
-    if let Some((index, byte)) = input
-        .iter()
-        .copied()
-        .enumerate()
-        .find(|(_, byte)| !byte.is_ascii())
-    {
-        return Err(Error::InvalidInput(format!(
-            "non-ASCII byte 0x{byte:02X} at offset {index}"
-        )));
-    }
-
-    Ok(())
 }
 
 fn ensure_record_len(record: &[u8], index: usize) -> Result<(), Error> {
@@ -286,7 +269,7 @@ fn parse_end(record: &[u8]) -> Result<End, Error> {
     Ok(End)
 }
 
-fn render_header(header: &Header) -> Result<[u8; RECORD_LEN], Error> {
+fn render_header(header: &Header, encoding: Encoding) -> Result<[u8; RECORD_LEN], Error> {
     validate_header(header)?;
 
     let mut record = blank_record(b'1');
@@ -317,6 +300,7 @@ fn render_header(header: &Header) -> Result<[u8; RECORD_LEN], Error> {
         &header.collector_name,
         "header",
         "collector_name",
+        encoding,
     )?;
     put_digits(
         &mut record,
@@ -349,11 +333,14 @@ fn render_header(header: &Header) -> Result<[u8; RECORD_LEN], Error> {
     Ok(record)
 }
 
-fn render_details(details: &[Detail]) -> Result<Vec<[u8; RECORD_LEN]>, Error> {
-    details.iter().map(render_detail).collect()
+fn render_details(details: &[Detail], encoding: Encoding) -> Result<Vec<[u8; RECORD_LEN]>, Error> {
+    details
+        .iter()
+        .map(|detail| render_detail(detail, encoding))
+        .collect()
 }
 
-fn render_detail(detail: &Detail) -> Result<[u8; RECORD_LEN], Error> {
+fn render_detail(detail: &Detail, encoding: Encoding) -> Result<[u8; RECORD_LEN], Error> {
     validate_detail(detail)?;
 
     let mut record = blank_record(b'2');
@@ -370,6 +357,7 @@ fn render_detail(detail: &Detail) -> Result<[u8; RECORD_LEN], Error> {
         &detail.payer_name,
         "detail",
         "payer_name",
+        encoding,
     )?;
     put_digits(
         &mut record,
@@ -436,7 +424,7 @@ fn validate_header(header: &Header) -> Result<(), Error> {
 
     validate_digit_str("header", "collection_date", &header.collection_date, 8)?;
     validate_digit_str("header", "collector_code", &header.collector_code, 10)?;
-    validate_text_value("header", "collector_name", &header.collector_name, 40)?;
+    validate_text_value("header", "collector_name", &header.collector_name)?;
     validate_digit_str("header", "bank_code", &header.bank_code, 4)?;
     validate_digit_str("header", "branch_code", &header.branch_code, 3)?;
     validate_numeric_width("header", "account_type", header.account_type.into(), 1)?;
@@ -446,7 +434,7 @@ fn validate_header(header: &Header) -> Result<(), Error> {
 
 fn validate_detail(detail: &Detail) -> Result<(), Error> {
     validate_digit_str("detail", "payer_code", &detail.payer_code, 10)?;
-    validate_text_value("detail", "payer_name", &detail.payer_name, 40)?;
+    validate_text_value("detail", "payer_name", &detail.payer_name)?;
     validate_digit_str("detail", "bank_code", &detail.bank_code, 4)?;
     validate_digit_str("detail", "branch_code", &detail.branch_code, 3)?;
     validate_numeric_width("detail", "account_type", detail.account_type.into(), 1)?;
@@ -484,7 +472,6 @@ fn validate_text_value(
     record: &'static str,
     field: &'static str,
     value: &str,
-    width: usize,
 ) -> Result<(), Error> {
     if value.is_empty() {
         return Err(Error::InvalidField {
@@ -494,23 +481,100 @@ fn validate_text_value(
         });
     }
 
-    if !value.is_ascii() {
+    if value.chars().any(char::is_control) {
         return Err(Error::InvalidField {
             record,
             field,
-            message: "must be ASCII in the current implementation".to_string(),
-        });
-    }
-
-    if value.len() > width {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: format!("must be at most {width} bytes, got {}", value.len()),
+            message: "must not contain control characters".to_string(),
         });
     }
 
     Ok(())
+}
+
+fn encode_text(
+    value: &str,
+    encoding: Encoding,
+    record: &'static str,
+    field: &'static str,
+    width: usize,
+) -> Result<Vec<u8>, Error> {
+    validate_text_value(record, field, value)?;
+
+    let mut encoded = Vec::with_capacity(value.chars().count());
+    for ch in value.chars() {
+        let byte = match encoding {
+            Encoding::Ascii => encode_ascii_char(ch).ok_or_else(|| Error::InvalidField {
+                record,
+                field,
+                message: format!("must be encodable as ASCII, got {:?}", ch),
+            })?,
+            Encoding::Jis => encode_jis_char(ch).ok_or_else(|| Error::InvalidField {
+                record,
+                field,
+                message: format!("must be encodable as JIS X 0201, got {:?}", ch),
+            })?,
+            Encoding::Ebcdic => {
+                return Err(Error::UnsupportedEncoding(Encoding::Ebcdic));
+            }
+        };
+        encoded.push(byte);
+    }
+
+    if encoded.len() > width {
+        return Err(Error::InvalidField {
+            record,
+            field,
+            message: format!(
+                "must be at most {width} bytes when encoded, got {}",
+                encoded.len()
+            ),
+        });
+    }
+
+    Ok(encoded)
+}
+
+fn decode_jis_text(
+    bytes: &[u8],
+    record: &'static str,
+    field: &'static str,
+) -> Result<String, Error> {
+    let mut value = String::with_capacity(bytes.len());
+    for (index, byte) in bytes.iter().copied().enumerate() {
+        let ch = decode_jis_char(byte).ok_or_else(|| Error::InvalidField {
+            record,
+            field,
+            message: format!("invalid JIS X 0201 byte 0x{byte:02X} at offset {index}"),
+        })?;
+        value.push(ch);
+    }
+    Ok(value)
+}
+
+fn encode_ascii_char(ch: char) -> Option<u8> {
+    match ch {
+        ' '..='~' => Some(ch as u8),
+        _ => None,
+    }
+}
+
+fn encode_jis_char(ch: char) -> Option<u8> {
+    match ch {
+        ' '..='~' => Some(ch as u8),
+        '¥' => Some(0x5C),
+        '‾' => Some(0x7E),
+        '\u{FF61}'..='\u{FF9F}' => Some((u32::from(ch) - 0xFF61 + 0xA1) as u8),
+        _ => None,
+    }
+}
+
+fn decode_jis_char(byte: u8) -> Option<char> {
+    match byte {
+        0x20..=0x7E => Some(byte as char),
+        0xA1..=0xDF => char::from_u32(u32::from(byte) - 0xA1 + 0xFF61),
+        _ => None,
+    }
 }
 
 fn validate_numeric_width(
@@ -543,9 +607,10 @@ fn put_text(
     value: &str,
     record_name: &'static str,
     field: &'static str,
+    encoding: Encoding,
 ) -> Result<(), Error> {
-    validate_text_value(record_name, field, value, range.len())?;
-    record[range.start..range.start + value.len()].copy_from_slice(value.as_bytes());
+    let encoded = encode_text(value, encoding, record_name, field, range.len())?;
+    record[range.start..range.start + encoded.len()].copy_from_slice(&encoded);
     Ok(())
 }
 
@@ -608,14 +673,9 @@ fn parse_text(
     record_name: &'static str,
     field: &'static str,
 ) -> Result<String, Error> {
-    let width = range.len();
-    let value = core::str::from_utf8(&record[range]).map_err(|error| Error::InvalidField {
-        record: record_name,
-        field,
-        message: error.to_string(),
-    })?;
+    let value = decode_jis_text(&record[range], record_name, field)?;
     let value = value.trim_end_matches(' ').to_string();
-    validate_text_value(record_name, field, &value, width)?;
+    validate_text_value(record_name, field, &value)?;
     Ok(value)
 }
 
