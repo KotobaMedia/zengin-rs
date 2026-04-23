@@ -1,6 +1,14 @@
 use serde::{Serialize, de::DeserializeOwned};
 
 pub mod account_transfer;
+pub mod account_transfer_result;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum ParsedFile {
+    AccountTransfer(account_transfer::File),
+    AccountTransferResult(account_transfer_result::File),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Encoding {
@@ -96,9 +104,21 @@ pub fn from_bytes<T>(input: &[u8]) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
-    let file = account_transfer::parse(input)?;
+    let file = parse(input)?;
     let value = serde_json::to_value(file)?;
     Ok(serde_json::from_value(value)?)
+}
+
+pub fn parse(input: &[u8]) -> Result<ParsedFile, Error> {
+    match account_transfer::parse(input) {
+        Ok(file) => Ok(ParsedFile::AccountTransfer(file)),
+        Err(account_transfer_error) => match account_transfer_result::parse(input) {
+            Ok(file) => Ok(ParsedFile::AccountTransferResult(file)),
+            Err(account_transfer_result_error) => Err(Error::InvalidInput(format!(
+                "unsupported account transfer file: request parse failed with {account_transfer_error}; result parse failed with {account_transfer_result_error}"
+            ))),
+        },
+    }
 }
 
 pub fn to_bytes<T>(value: &T, format: OutputFormat) -> Result<Vec<u8>, Error>

@@ -7,7 +7,7 @@ use std::{
     process::ExitCode,
 };
 
-use zengin_rs::{account_transfer::File, from_bytes};
+use zengin_rs::{ParsedFile, from_bytes};
 
 fn main() -> ExitCode {
     match run() {
@@ -22,7 +22,7 @@ fn main() -> ExitCode {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let path = parse_args(env::args_os())?;
     let input = fs::read(path)?;
-    let file: File = from_bytes(&input)?;
+    let file: ParsedFile = from_bytes(&input)?;
 
     let stdout = io::stdout();
     let mut stdout = stdout.lock();

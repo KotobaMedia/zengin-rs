@@ -39,6 +39,85 @@ fn sample_file() -> File {
     }
 }
 
+fn pad_text(value: &str, width: usize) -> String {
+    format!("{value:<width$}")
+}
+
+fn pad_number<T>(value: T, width: usize) -> String
+where
+    T: std::fmt::Display,
+{
+    format!("{value:0width$}")
+}
+
+fn sample_result_input() -> Vec<u8> {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "1{:02}{}{}{}{}{}{}{}{}{}{}{}",
+        91,
+        0,
+        "1234567890",
+        pad_text("ACME COLLECTOR", 40),
+        "0422",
+        "0288",
+        pad_text("BANK ALPHA", 15),
+        "220",
+        pad_text("MAIN BRANCH", 15),
+        1,
+        "5000001",
+        " ".repeat(17),
+    ));
+    lines.push(format!(
+        "2{}{}{}{}{}{}{}{}{}{}{}{}{}",
+        "0288",
+        pad_text("BANK ALPHA", 15),
+        "110",
+        pad_text("WEST", 15),
+        " ".repeat(4),
+        1,
+        "6000001",
+        pad_text("ALPHA INC", 30),
+        pad_number(1000, 10),
+        0,
+        "01234567890123450001",
+        0,
+        " ".repeat(8),
+    ));
+    lines.push(format!(
+        "2{}{}{}{}{}{}{}{}{}{}{}{}{}",
+        "0288",
+        pad_text("BANK ALPHA", 15),
+        "650",
+        pad_text("EAST", 15),
+        " ".repeat(4),
+        2,
+        "6000002",
+        pad_text("BETA LLC", 30),
+        pad_number(2000, 10),
+        1,
+        "01234567890123450002",
+        1,
+        " ".repeat(8),
+    ));
+    lines.push(format!(
+        "8{}{}{}{}{}{}{}",
+        pad_number(2, 6),
+        pad_number(3000, 12),
+        pad_number(1, 6),
+        pad_number(1000, 12),
+        pad_number(1, 6),
+        pad_number(2000, 12),
+        " ".repeat(65),
+    ));
+    lines.push(format!("9{}", " ".repeat(119)));
+
+    for line in &lines {
+        assert_eq!(line.len(), 120);
+    }
+
+    lines.join("\r\n").into_bytes()
+}
+
 fn temp_input_path() -> std::path::PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -70,6 +149,32 @@ fn parses_input_file_to_json() {
     assert_eq!(json["header"]["kind_code"], 91);
     assert_eq!(json["header"]["collector_name"], "ﾃｽﾄｼｭｳｷﾝ");
     assert_eq!(json["details"][0]["amount"], 1200);
+}
+
+#[test]
+fn parses_result_file_to_json() {
+    let input_path = temp_input_path();
+    fs::write(&input_path, sample_result_input()).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg(&input_path)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_file(&input_path);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["header"]["collection_date"], "0422");
+    assert_eq!(json["header"]["bank_name"], "BANK ALPHA");
+    assert_eq!(json["details"][0]["account_holder_name"], "ALPHA INC");
+    assert_eq!(json["details"][1]["result_code"], 1);
+    assert_eq!(json["trailer"]["failure_count"], 1);
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 このライブラリは、全銀フォーマットを Rust の構造体に読み書きするための、`serde` ベースの実装です。
 
-現時点では `種別コード 91` の `口座振替` を対象に、ヘッダ・明細・トレーラ・エンドの最小実装を提供します。
+現時点では `種別コード 91` の `口座振替` を対象に、依頼ファイルと口座振替結果照会ファイルの読み込みを提供します。
 
 ## ワークスペース構成
 
@@ -12,6 +12,8 @@
 ## 現在の実装範囲
 
 - `zengin_rs::account_transfer::{File, Header, Detail, Trailer, End}` を提供
+- `zengin_rs::account_transfer_result::{File, Header, Detail, Trailer, End}` を提供
+- `zengin_rs::ParsedFile` と `zengin_rs::parse` / `from_bytes` で対応ファイルを自動判別
 - `from_bytes` で固定長レコードを `serde` 経由で Rust 構造体に復元
 - `to_bytes` で Rust 構造体から固定長レコードを生成
 - `Jis` は `JIS8 (JIS X 0201)` として扱い、メモリ上では Unicode の `String` に変換
@@ -24,7 +26,7 @@
 
 ## CLI
 
-`zengin` は入力ファイルを 1 つ受け取り、`account_transfer::File` 相当の JSON を標準出力へ出します。
+`zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを自動判別して JSON を標準出力へ出します。
 
 ```bash
 cargo run -p zengin-cli -- ./sample.zengin
