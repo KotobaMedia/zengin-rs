@@ -4,6 +4,11 @@
 
 現時点では `種別コード 91` の `口座振替` を対象に、ヘッダ・明細・トレーラ・エンドの最小実装を提供します。
 
+## ワークスペース構成
+
+- `crates/zengin-rs`: パーサーとシリアライズを提供するライブラリ
+- `crates/zengin-cli`: 全銀ファイルを読み込んで JSON を標準出力へ出す最小 CLI (`zengin`)
+
 ## 現在の実装範囲
 
 - `zengin_rs::account_transfer::{File, Header, Detail, Trailer, End}` を提供
@@ -16,6 +21,21 @@
 現時点で書き出しに対応しているのは `Ascii` と `Jis` です。`Ebcdic` は未対応です。
 
 `Jis` のテキスト項目は Unicode では半角カナとして保持します。たとえば wire 上の JIS8 バイト列は、Rust 側では `"ﾔﾏﾀﾞﾀﾛｳ"` のような `String` として扱えます。JIS8 の対象外である全角カナ・ひらがな・漢字は、この実装ではまだ書き出しできません。
+
+## CLI
+
+`zengin` は入力ファイルを 1 つ受け取り、`account_transfer::File` 相当の JSON を標準出力へ出します。
+
+```bash
+cargo run -p zengin-cli -- ./sample.zengin
+```
+
+インストールして使う場合:
+
+```bash
+cargo install --path crates/zengin-cli
+zengin ./sample.zengin
+```
 
 ## 使い方
 

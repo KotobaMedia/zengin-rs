@@ -112,7 +112,7 @@ where
 
 #[cfg(doctest)]
 mod readme_doctests {
-    doc_comment::doctest!("../README.md");
+    doc_comment::doctest!("../../../README.md");
 }
 
 #[cfg(test)]

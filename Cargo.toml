@@ -1,11 +1,12 @@
-[package]
-name = "zengin-rs"
+[workspace]
+members = ["crates/zengin-rs", "crates/zengin-cli"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+doc-comment = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[dev-dependencies]
-doc-comment = "0.3"
