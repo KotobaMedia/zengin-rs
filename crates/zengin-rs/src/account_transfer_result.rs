@@ -268,11 +268,7 @@ fn validate_detail(detail: &Detail) -> Result<(), Error> {
     validate_text_value_allow_empty("detail", "branch_name", &detail.branch_name)?;
     validate_numeric_width("detail", "account_type", detail.account_type.into(), 1)?;
     validate_digit_str("detail", "account_number", &detail.account_number, 7)?;
-    validate_text_value(
-        "detail",
-        "account_holder_name",
-        &detail.account_holder_name,
-    )?;
+    validate_text_value("detail", "account_holder_name", &detail.account_holder_name)?;
     validate_numeric_width("detail", "amount", detail.amount, 10)?;
     validate_numeric_width("detail", "new_code", detail.new_code.into(), 1)?;
     validate_text_value_allow_empty("detail", "customer_number", &detail.customer_number)?;
@@ -554,7 +550,11 @@ fn validate_numeric_width(
     Ok(())
 }
 
-fn validate_count_width(record: &'static str, field: &'static str, value: u32) -> Result<(), Error> {
+fn validate_count_width(
+    record: &'static str,
+    field: &'static str,
+    value: u32,
+) -> Result<(), Error> {
     validate_numeric_width(record, field, value.into(), 6)
 }
 
@@ -641,47 +641,53 @@ mod tests {
         let file = sample_file();
         let mut lines = Vec::new();
 
-        lines.push(format!(
-            "1{:02}{}{}{}{}{}{}{}{}{}{}",
-            file.header.kind_code,
-            file.header.code_division,
-            file.header.collector_code,
-            pad_text(&file.header.collector_name, 40),
-            file.header.collection_date,
-            file.header.bank_code,
-            pad_text(&file.header.bank_name, 15),
-            file.header.branch_code,
-            pad_text(&file.header.branch_name, 15),
-            file.header.account_type,
-            file.header.account_number,
-        ) + &" ".repeat(17));
+        lines.push(
+            format!(
+                "1{:02}{}{}{}{}{}{}{}{}{}{}",
+                file.header.kind_code,
+                file.header.code_division,
+                file.header.collector_code,
+                pad_text(&file.header.collector_name, 40),
+                file.header.collection_date,
+                file.header.bank_code,
+                pad_text(&file.header.bank_name, 15),
+                file.header.branch_code,
+                pad_text(&file.header.branch_name, 15),
+                file.header.account_type,
+                file.header.account_number,
+            ) + &" ".repeat(17),
+        );
 
         for detail in &file.details {
-            lines.push(format!(
-                "2{}{}{}{}{}{}{}{}{}{}{}",
-                detail.bank_code,
-                pad_text(&detail.bank_name, 15),
-                detail.branch_code,
-                pad_text(&detail.branch_name, 15),
-                " ".repeat(4),
-                detail.account_type,
-                detail.account_number,
-                pad_text(&detail.account_holder_name, 30),
-                pad_number(detail.amount, 10),
-                detail.new_code,
-                detail.customer_number,
-            ) + &format!("{}{}", detail.result_code, " ".repeat(8)));
+            lines.push(
+                format!(
+                    "2{}{}{}{}{}{}{}{}{}{}{}",
+                    detail.bank_code,
+                    pad_text(&detail.bank_name, 15),
+                    detail.branch_code,
+                    pad_text(&detail.branch_name, 15),
+                    " ".repeat(4),
+                    detail.account_type,
+                    detail.account_number,
+                    pad_text(&detail.account_holder_name, 30),
+                    pad_number(detail.amount, 10),
+                    detail.new_code,
+                    detail.customer_number,
+                ) + &format!("{}{}", detail.result_code, " ".repeat(8)),
+            );
         }
 
-        lines.push(format!(
-            "8{}{}{}{}{}{}",
-            pad_number(file.trailer.total_count, 6),
-            pad_number(file.trailer.total_amount, 12),
-            pad_number(file.trailer.success_count, 6),
-            pad_number(file.trailer.success_amount, 12),
-            pad_number(file.trailer.failure_count, 6),
-            pad_number(file.trailer.failure_amount, 12),
-        ) + &" ".repeat(65));
+        lines.push(
+            format!(
+                "8{}{}{}{}{}{}",
+                pad_number(file.trailer.total_count, 6),
+                pad_number(file.trailer.total_amount, 12),
+                pad_number(file.trailer.success_count, 6),
+                pad_number(file.trailer.success_amount, 12),
+                pad_number(file.trailer.failure_count, 6),
+                pad_number(file.trailer.failure_amount, 12),
+            ) + &" ".repeat(65),
+        );
         lines.push(format!("9{}", " ".repeat(119)));
 
         for line in &lines {
@@ -713,7 +719,10 @@ mod tests {
         bytes[3] = b'1';
 
         let error = parse(&bytes).unwrap_err();
-        assert!(matches!(error, Error::UnsupportedEncoding(Encoding::Ebcdic)));
+        assert!(matches!(
+            error,
+            Error::UnsupportedEncoding(Encoding::Ebcdic)
+        ));
     }
 
     #[test]

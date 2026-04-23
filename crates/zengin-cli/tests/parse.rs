@@ -14,22 +14,28 @@ fn sample_file() -> File {
     File {
         header: Header {
             kind_code: 91,
-            collection_date: "20260430".to_string(),
+            code_division: "0".to_string(),
             collector_code: "1234567890".to_string(),
+            collection_date: "0430".to_string(),
             collector_name: "ﾃｽﾄｼｭｳｷﾝ".to_string(),
             bank_code: "0001".to_string(),
+            bank_name: "ﾃｽﾄｷﾞﾝｺｳ".to_string(),
             branch_code: "123".to_string(),
+            branch_name: "ﾎﾝﾃﾝ".to_string(),
             account_type: 1,
-            account_number: "76543210".to_string(),
+            account_number: "7654321".to_string(),
         },
         details: vec![Detail {
-            payer_code: "9000000001".to_string(),
-            payer_name: "ﾔﾏﾀﾞﾀﾛｳ".to_string(),
             bank_code: "0005".to_string(),
+            bank_name: "ﾃｽﾄｷﾞﾝｺｳ".to_string(),
             branch_code: "001".to_string(),
+            branch_name: "ｼﾃﾝ".to_string(),
             account_type: 1,
-            account_number: "12345678".to_string(),
+            account_number: "1234567".to_string(),
+            payer_name: "ﾔﾏﾀﾞﾀﾛｳ".to_string(),
             amount: 1200,
+            new_code: "0".to_string(),
+            customer_number: "00000000001234567890".to_string(),
         }],
         trailer: Trailer {
             record_count: 1,
@@ -148,7 +154,12 @@ fn parses_input_file_to_json() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["header"]["kind_code"], 91);
     assert_eq!(json["header"]["collector_name"], "ﾃｽﾄｼｭｳｷﾝ");
+    assert_eq!(json["header"]["bank_name"], "ﾃｽﾄｷﾞﾝｺｳ");
     assert_eq!(json["details"][0]["amount"], 1200);
+    assert_eq!(
+        json["details"][0]["customer_number"],
+        "00000000001234567890"
+    );
 }
 
 #[test]

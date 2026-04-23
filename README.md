@@ -49,22 +49,28 @@ use zengin_rs::{OutputFormat, account_transfer, from_bytes, to_bytes};
 # let sample = account_transfer::File {
 #     header: account_transfer::Header {
 #         kind_code: 91,
-#         collection_date: "20260430".into(),
+#         code_division: "0".into(),
 #         collector_code: "1234567890".into(),
 #         collector_name: "ﾃｽﾄｼｭｳｷﾝ".into(),
+#         collection_date: "0430".into(),
 #         bank_code: "0001".into(),
+#         bank_name: "ﾃｽﾄｷﾞﾝｺｳ".into(),
 #         branch_code: "123".into(),
+#         branch_name: "ﾎﾝﾃﾝ".into(),
 #         account_type: 1,
-#         account_number: "76543210".into(),
+#         account_number: "7654321".into(),
 #     },
 #     details: vec![account_transfer::Detail {
-#         payer_code: "9000000001".into(),
-#         payer_name: "ﾔﾏﾀﾞﾀﾛｳ".into(),
 #         bank_code: "0005".into(),
+#         bank_name: "ﾃｽﾄｷﾞﾝｺｳ".into(),
 #         branch_code: "001".into(),
+#         branch_name: "ｼﾃﾝ".into(),
 #         account_type: 1,
-#         account_number: "12345678".into(),
+#         account_number: "1234567".into(),
+#         payer_name: "ﾔﾏﾀﾞﾀﾛｳ".into(),
 #         amount: 1200,
+#         new_code: "0".into(),
+#         customer_number: "00000000001234567890".into(),
 #     }],
 #     trailer: account_transfer::Trailer {
 #         record_count: 1,
@@ -86,6 +92,8 @@ assert_eq!(file.details[0].amount, 1200);
 
 ### 書き込み
 
+銀行へアップロードする送信用ファイルは `OutputFormat::canonical()` を使ってください。`OutputFormat::readable()` は確認用に改行を入れる形式です。
+
 ```rust
 use zengin_rs::{
     OutputFormat, account_transfer,
@@ -95,22 +103,28 @@ use zengin_rs::{
 let file = account_transfer::File {
     header: account_transfer::Header {
         kind_code: 91,
-        collection_date: "20260430".into(),
+        code_division: "0".into(),
         collector_code: "1234567890".into(),
         collector_name: "ﾃｽﾄｼｭｳｷﾝ".into(),
+        collection_date: "0430".into(),
         bank_code: "0001".into(),
+        bank_name: "ﾃｽﾄｷﾞﾝｺｳ".into(),
         branch_code: "123".into(),
+        branch_name: "ﾎﾝﾃﾝ".into(),
         account_type: 1,
-        account_number: "76543210".into(),
+        account_number: "7654321".into(),
     },
     details: vec![account_transfer::Detail {
-        payer_code: "9000000001".into(),
-        payer_name: "ﾔﾏﾀﾞﾀﾛｳ".into(),
         bank_code: "0005".into(),
+        bank_name: "ﾃｽﾄｷﾞﾝｺｳ".into(),
         branch_code: "001".into(),
+        branch_name: "ｼﾃﾝ".into(),
         account_type: 1,
-        account_number: "12345678".into(),
+        account_number: "1234567".into(),
+        payer_name: "ﾔﾏﾀﾞﾀﾛｳ".into(),
         amount: 1200,
+        new_code: "0".into(),
+        customer_number: "00000000001234567890".into(),
     }],
     trailer: account_transfer::Trailer {
         record_count: 1,
