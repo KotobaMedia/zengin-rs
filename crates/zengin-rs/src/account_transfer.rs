@@ -224,7 +224,7 @@ fn split_records(input: &[u8]) -> Result<Vec<&[u8]>, Error> {
         ));
     }
 
-    if input.len() % RECORD_LEN != 0 {
+    if !input.len().is_multiple_of(RECORD_LEN) {
         return Err(Error::InvalidInput(format!(
             "canonical input length must be a multiple of {RECORD_LEN}, got {}",
             input.len()
@@ -257,9 +257,13 @@ fn ensure_record_len(record: &[u8], index: usize) -> Result<(), Error> {
 fn parse_header(record: &[u8]) -> Result<Header, Error> {
     ensure_record_type(record, "header", b'1')?;
 
+    let code_division = parse_optional_text(record, 3..4, "header", "code_division")?;
+    ensure_supported_code_division(&code_division, "header", "code_division")?;
+    ensure_spaces(record, 103..120, "header", "padding")?;
+
     Ok(Header {
         kind_code: parse_number(record, 1..3, "header", "kind_code")? as u8,
-        code_division: parse_optional_text(record, 3..4, "header", "code_division")?,
+        code_division,
         collector_code: parse_digit_string(record, 4..14, "header", "collector_code")?,
         collector_name: parse_required_text(record, 14..54, "header", "collector_name")?,
         collection_date: parse_digit_string(record, 54..58, "header", "collection_date")?,
@@ -274,6 +278,8 @@ fn parse_header(record: &[u8]) -> Result<Header, Error> {
 
 fn parse_detail(record: &[u8]) -> Result<Detail, Error> {
     ensure_record_type(record, "detail", b'2')?;
+    ensure_spaces(record, 38..42, "detail", "bank_padding")?;
+    ensure_spaces(record, 112..120, "detail", "padding")?;
 
     let result_code = parse_number(record, 111..112, "detail", "result_code")? as u8;
     if result_code != 0 {
@@ -300,6 +306,7 @@ fn parse_detail(record: &[u8]) -> Result<Detail, Error> {
 
 fn parse_trailer(record: &[u8]) -> Result<Trailer, Error> {
     ensure_record_type(record, "trailer", b'8')?;
+    ensure_spaces(record, 55..120, "trailer", "padding")?;
 
     let success_count = parse_number(record, 19..25, "trailer", "success_count")?;
     let success_amount = parse_number(record, 25..37, "trailer", "success_amount")?;
@@ -329,6 +336,7 @@ fn parse_trailer(record: &[u8]) -> Result<Trailer, Error> {
 
 fn parse_end(record: &[u8]) -> Result<End, Error> {
     ensure_record_type(record, "end", b'9')?;
+    ensure_spaces(record, 1..120, "end", "padding")?;
     Ok(End)
 }
 
@@ -541,7 +549,7 @@ fn validate_header(header: &Header) -> Result<(), Error> {
         )));
     }
 
-    validate_text_value_allow_empty("header", "code_division", &header.code_division)?;
+    ensure_supported_code_division(&header.code_division, "header", "code_division")?;
     validate_digit_str("header", "collector_code", &header.collector_code, 10)?;
     validate_text_value("header", "collector_name", &header.collector_name)?;
     validate_digit_str("header", "collection_date", &header.collection_date, 4)?;
@@ -801,6 +809,39 @@ fn ensure_record_type(record: &[u8], record_name: &'static str, expected: u8) ->
     Ok(())
 }
 
+fn ensure_spaces(
+    record: &[u8],
+    range: core::ops::Range<usize>,
+    record_name: &'static str,
+    field: &'static str,
+) -> Result<(), Error> {
+    if !record[range.clone()].iter().all(|byte| *byte == b' ') {
+        return Err(Error::InvalidField {
+            record: record_name,
+            field,
+            message: "must be space padded".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn ensure_supported_code_division(
+    code_division: &str,
+    record: &'static str,
+    field: &'static str,
+) -> Result<(), Error> {
+    match code_division {
+        "" | "0" => Ok(()),
+        "1" => Err(Error::UnsupportedEncoding(Encoding::Ebcdic)),
+        other => Err(Error::InvalidField {
+            record,
+            field,
+            message: format!("must be blank, 0, or 1, got {other:?}"),
+        }),
+    }
+}
+
 fn parse_required_text(
     record: &[u8],
     range: core::ops::Range<usize>,
@@ -1054,24 +1095,14 @@ mod tests {
         let mut bytes = sample_bytes();
 
         bytes[3] = b' ';
-        for offset in 58..77 {
-            bytes[offset] = b' ';
-        }
-        for offset in 80..95 {
-            bytes[offset] = b' ';
-        }
+        bytes[58..77].fill(b' ');
+        bytes[80..95].fill(b' ');
 
         let detail_offset = 122;
-        for offset in detail_offset + 1..detail_offset + 20 {
-            bytes[offset] = b' ';
-        }
-        for offset in detail_offset + 23..detail_offset + 38 {
-            bytes[offset] = b' ';
-        }
+        bytes[detail_offset + 1..detail_offset + 20].fill(b' ');
+        bytes[detail_offset + 23..detail_offset + 38].fill(b' ');
         bytes[detail_offset + 90] = b' ';
-        for offset in detail_offset + 91..detail_offset + 111 {
-            bytes[offset] = b' ';
-        }
+        bytes[detail_offset + 91..detail_offset + 111].fill(b' ');
 
         let decoded = parse(&bytes).unwrap();
         assert_eq!(decoded.header.code_division, "");
@@ -1101,5 +1132,36 @@ mod tests {
             error,
             Error::UnsupportedEncoding(Encoding::Ebcdic)
         ));
+    }
+
+    #[test]
+    fn rejects_ebcdic_request_input() {
+        let mut bytes = sample_bytes();
+        bytes[3] = b'1';
+
+        let error = parse(&bytes).unwrap_err();
+        assert!(matches!(
+            error,
+            Error::UnsupportedEncoding(Encoding::Ebcdic)
+        ));
+    }
+
+    #[test]
+    fn rejects_non_space_request_padding() {
+        for (offset, field) in [
+            (103, "header.padding"),
+            (122 + 38, "detail.bank_padding"),
+            (122 * 3 + 55, "trailer.padding"),
+            (122 * 4 + 1, "end.padding"),
+        ] {
+            let mut bytes = sample_bytes();
+            bytes[offset] = b'X';
+
+            let error = parse(&bytes).unwrap_err();
+            assert!(
+                error.to_string().contains(field),
+                "expected error to contain {field}, got {error}"
+            );
+        }
     }
 }

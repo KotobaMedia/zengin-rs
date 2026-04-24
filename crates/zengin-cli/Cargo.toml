@@ -2,6 +2,9 @@
 name = "zengin-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "zengin"
@@ -9,4 +12,4 @@ path = "src/main.rs"
 
 [dependencies]
 serde_json.workspace = true
-zengin-rs = { path = "../zengin-rs" }
+zengin-rs = { path = "../zengin-rs", version = "0.1.0" }

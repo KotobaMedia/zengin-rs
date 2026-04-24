@@ -315,7 +315,7 @@ fn split_records(input: &[u8]) -> Result<Vec<&[u8]>, Error> {
         ));
     }
 
-    if input.len() % RECORD_LEN != 0 {
+    if !input.len().is_multiple_of(RECORD_LEN) {
         return Err(Error::InvalidInput(format!(
             "canonical input length must be a multiple of {RECORD_LEN}, got {}",
             input.len()
@@ -729,14 +729,10 @@ mod tests {
     fn accepts_blank_branch_names() {
         let mut bytes = sample_bytes();
 
-        for offset in 80..95 {
-            bytes[offset] = b' ';
-        }
+        bytes[80..95].fill(b' ');
 
         let detail_offset = 122;
-        for offset in detail_offset + 23..detail_offset + 38 {
-            bytes[offset] = b' ';
-        }
+        bytes[detail_offset + 23..detail_offset + 38].fill(b' ');
 
         let decoded = parse(&bytes).unwrap();
         assert_eq!(decoded.header.branch_name, "");
@@ -748,9 +744,7 @@ mod tests {
         let mut bytes = sample_bytes();
 
         let first_detail_offset = 122;
-        for offset in first_detail_offset + 91..first_detail_offset + 111 {
-            bytes[offset] = b' ';
-        }
+        bytes[first_detail_offset + 91..first_detail_offset + 111].fill(b' ');
 
         let second_detail_offset = 244;
         let customer_number = format!("{:<20}", "1043");
@@ -767,9 +761,7 @@ mod tests {
         let mut bytes = sample_bytes();
         let trailer_offset = 122 * 3;
 
-        for offset in trailer_offset + 19..trailer_offset + 55 {
-            bytes[offset] = b'0';
-        }
+        bytes[trailer_offset + 19..trailer_offset + 55].fill(b'0');
 
         let decoded = parse(&bytes).unwrap();
         assert_eq!(decoded.trailer.success_count, 0);

@@ -6,6 +6,8 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Parser and writer for Zengin account transfer fixed-width files"
+repository = "https://github.com/KotobaMedia/zengin-rs"
 
 [workspace.dependencies]
 doc-comment = "0.3"

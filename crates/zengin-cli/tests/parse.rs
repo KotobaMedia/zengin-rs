@@ -1,6 +1,7 @@
 use std::{
     fs,
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -9,6 +10,8 @@ use zengin_rs::{
     account_transfer::{Detail, End, File, Header, Trailer},
     to_bytes,
 };
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn sample_file() -> File {
     File {
@@ -129,7 +132,11 @@ fn temp_input_path() -> std::path::PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("zengin-cli-{stamp}.txt"))
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "zengin-cli-{}-{stamp}-{counter}.txt",
+        std::process::id()
+    ))
 }
 
 #[test]
@@ -139,6 +146,8 @@ fn parses_input_file_to_json() {
     fs::write(&input_path, input).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg("--type")
+        .arg("request")
         .arg(&input_path)
         .output()
         .unwrap();
@@ -168,6 +177,7 @@ fn parses_result_file_to_json() {
     fs::write(&input_path, sample_result_input()).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg("--type=result")
         .arg(&input_path)
         .output()
         .unwrap();
@@ -194,4 +204,40 @@ fn reports_usage_without_an_input_file() {
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("usage:"));
+}
+
+#[test]
+fn auto_mode_rejects_ambiguous_request_files() {
+    let input_path = temp_input_path();
+    let input = to_bytes(&sample_file(), OutputFormat::readable()).unwrap();
+    fs::write(&input_path, input).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg(&input_path)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_file(&input_path);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("valid as both"));
+}
+
+#[test]
+fn rejects_input_files_over_10_mib() {
+    let input_path = temp_input_path();
+    let file = fs::File::create(&input_path).unwrap();
+    file.set_len(10 * 1024 * 1024 + 1).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg("--type")
+        .arg("request")
+        .arg(&input_path)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_file(&input_path);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("10 MiB limit"));
 }

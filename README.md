@@ -13,8 +13,9 @@
 
 - `zengin_rs::account_transfer::{File, Header, Detail, Trailer, End}` を提供
 - `zengin_rs::account_transfer_result::{File, Header, Detail, Trailer, End}` を提供
-- `zengin_rs::ParsedFile` と `zengin_rs::parse` / `from_bytes` で対応ファイルを自動判別
-- `from_bytes` で固定長レコードを `serde` 経由で Rust 構造体に復元
+- `zengin_rs::ParsedFile` と `zengin_rs::parse` / `parse_as` で対応ファイルを判別
+- `parse_account_transfer` / `parse_account_transfer_result` でファイル種別を明示して読み込み
+- `from_bytes` / `from_bytes_as` で固定長レコードを `serde` 経由で Rust 構造体に復元
 - `to_bytes` で Rust 構造体から固定長レコードを生成
 - `Jis` は `JIS8 (JIS X 0201)` として扱い、メモリ上では Unicode の `String` に変換
 - 改行あり (`LF` / `CRLF`)・改行なし・EOF (`0x1a`) 付き入力を受理
@@ -26,17 +27,17 @@
 
 ## CLI
 
-`zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを自動判別して JSON を標準出力へ出します。
+`zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを JSON として標準出力へ出します。既定は自動判別ですが、依頼ファイルと結果ファイルの両方として解釈できる入力はエラーになります。その場合は `--type request` または `--type result` を指定してください。CLI の入力サイズ上限は 10 MiB です。
 
 ```bash
-cargo run -p zengin-cli -- ./sample.zengin
+cargo run -p zengin-cli -- --type request ./sample.zengin
 ```
 
 インストールして使う場合:
 
 ```bash
 cargo install --path crates/zengin-cli
-zengin ./sample.zengin
+zengin --type request ./sample.zengin
 ```
 
 ## 使い方
@@ -44,7 +45,7 @@ zengin ./sample.zengin
 ### 読み込み
 
 ```rust
-use zengin_rs::{OutputFormat, account_transfer, from_bytes, to_bytes};
+use zengin_rs::{OutputFormat, account_transfer, parse_account_transfer, to_bytes};
 
 # let sample = account_transfer::File {
 #     header: account_transfer::Header {
@@ -79,7 +80,7 @@ use zengin_rs::{OutputFormat, account_transfer, from_bytes, to_bytes};
 #     end: account_transfer::End,
 # };
 # let input = to_bytes(&sample, OutputFormat::readable())?;
-let file: account_transfer::File = from_bytes(&input)?;
+let file = parse_account_transfer(&input)?;
 
 assert_eq!(file.header.kind_code, 91);
 assert_eq!(file.header.collector_name, "ﾃｽﾄｼｭｳｷﾝ");
@@ -97,7 +98,7 @@ assert_eq!(file.details[0].amount, 1200);
 ```rust
 use zengin_rs::{
     OutputFormat, account_transfer,
-    from_bytes, to_bytes,
+    parse_account_transfer, to_bytes,
 };
 
 let file = account_transfer::File {
@@ -136,7 +137,7 @@ let file = account_transfer::File {
 let encoded = to_bytes(&file, OutputFormat::readable())?;
 assert!(encoded.iter().any(|byte| *byte >= 0xA1));
 
-let decoded: account_transfer::File = from_bytes(&encoded)?;
+let decoded = parse_account_transfer(&encoded)?;
 
 assert_eq!(decoded, file);
 
