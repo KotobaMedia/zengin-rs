@@ -230,7 +230,11 @@ fn reports_usage_without_an_input_file() {
     let output = Command::new(env!("CARGO_BIN_EXE_zengin")).output().unwrap();
 
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("usage:"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .to_lowercase()
+            .contains("usage:")
+    );
 }
 
 #[test]

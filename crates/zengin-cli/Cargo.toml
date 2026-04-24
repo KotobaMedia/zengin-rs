@@ -11,6 +11,7 @@ name = "zengin"
 path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
 serde.workspace = true
 serde_json.workspace = true
 zengin-rs = { path = "../zengin-rs", version = "0.1.0" }
