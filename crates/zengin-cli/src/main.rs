@@ -7,6 +7,7 @@ use std::{
     process::ExitCode,
 };
 
+use serde::Serialize;
 use zengin_rs::{FileType, ParsedFile, parse_as};
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024;
@@ -15,6 +16,13 @@ const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024;
 struct Args {
     path: PathBuf,
     file_type: FileType,
+    metadata_only: bool,
+}
+
+#[derive(Serialize)]
+struct MetadataOnly<'a, H, T> {
+    header: &'a H,
+    trailer: &'a T,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +55,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
-    serde_json::to_writer_pretty(&mut stdout, &file)?;
+    write_json(&mut stdout, &file, args.metadata_only)?;
     stdout.write_all(b"\n")?;
     Ok(())
 }
@@ -56,11 +64,17 @@ fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<ParsedArgs, io
     let mut args = args.into_iter();
     let program = args.next().unwrap_or_else(|| OsString::from("zengin"));
     let mut file_type = FileType::Auto;
+    let mut metadata_only = false;
     let mut path = None;
 
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
             return Ok(ParsedArgs::Help { program });
+        }
+
+        if arg == "--metadata-only" {
+            metadata_only = true;
+            continue;
         }
 
         if arg == "--type" || arg == "-t" {
@@ -82,7 +96,11 @@ fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<ParsedArgs, io
     }
 
     let path = path.ok_or_else(|| usage_error(&program, "missing input file"))?;
-    Ok(ParsedArgs::Run(Args { path, file_type }))
+    Ok(ParsedArgs::Run(Args {
+        path,
+        file_type,
+        metadata_only,
+    }))
 }
 
 fn parse_file_type(program: &OsString, value: &OsStr) -> Result<FileType, io::Error> {
@@ -119,9 +137,35 @@ fn read_limited(path: &Path) -> Result<Vec<u8>, io::Error> {
     Ok(input)
 }
 
+fn write_json<W>(writer: W, file: &ParsedFile, metadata_only: bool) -> Result<(), serde_json::Error>
+where
+    W: Write,
+{
+    if metadata_only {
+        match file {
+            ParsedFile::AccountTransfer(file) => serde_json::to_writer_pretty(
+                writer,
+                &MetadataOnly {
+                    header: &file.header,
+                    trailer: &file.trailer,
+                },
+            ),
+            ParsedFile::AccountTransferResult(file) => serde_json::to_writer_pretty(
+                writer,
+                &MetadataOnly {
+                    header: &file.header,
+                    trailer: &file.trailer,
+                },
+            ),
+        }
+    } else {
+        serde_json::to_writer_pretty(writer, file)
+    }
+}
+
 fn print_usage(program: &OsString) {
     println!(
-        "usage: {} [--type auto|request|result] <input-file>",
+        "usage: {} [--metadata-only] [--type auto|request|result] <input-file>",
         program.to_string_lossy()
     );
 }
@@ -130,7 +174,7 @@ fn usage_error(program: &OsString, message: &str) -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
-            "{message}\nusage: {} <input-file>",
+            "{message}\nusage: {} [--metadata-only] [--type auto|request|result] <input-file>",
             program.to_string_lossy()
         ),
     )

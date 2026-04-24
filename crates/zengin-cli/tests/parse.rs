@@ -199,6 +199,33 @@ fn parses_result_file_to_json() {
 }
 
 #[test]
+fn metadata_only_outputs_header_and_trailer_without_details() {
+    let input_path = temp_input_path();
+    fs::write(&input_path, sample_result_input()).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg("--metadata-only")
+        .arg("--type=result")
+        .arg(&input_path)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_file(&input_path);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["header"]["collection_date"], "0422");
+    assert_eq!(json["trailer"]["total_count"], 2);
+    assert!(json.get("details").is_none());
+    assert!(json.get("end").is_none());
+}
+
+#[test]
 fn reports_usage_without_an_input_file() {
     let output = Command::new(env!("CARGO_BIN_EXE_zengin")).output().unwrap();
 

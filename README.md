@@ -30,14 +30,20 @@
 `zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを JSON として標準出力へ出します。既定は自動判別ですが、依頼ファイルと結果ファイルの両方として解釈できる入力はエラーになります。その場合は `--type request` または `--type result` を指定してください。CLI の入力サイズ上限は 10 MiB です。
 
 ```bash
-cargo run -p zengin-cli -- --type request ./sample.zengin
+cargo run -p zengin-cli -- --type request ./zengin.txt
+```
+
+ヘッダーとトレーラーだけを確認したい場合は、`--metadata-only` で明細とエンドレコードを省いた JSON を出力できます。
+
+```bash
+cargo run -p zengin-cli -- --metadata-only --type result ./zengin.txt
 ```
 
 インストールして使う場合:
 
 ```bash
 cargo install --path crates/zengin-cli
-zengin --type request ./sample.zengin
+zengin --type request ./zengin.txt
 ```
 
 ## 使い方
