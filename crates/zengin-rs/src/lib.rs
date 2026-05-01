@@ -1,20 +1,106 @@
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::fmt;
 
 pub mod account_transfer;
 pub mod account_transfer_result;
+mod fixed;
+pub mod general_transfer;
+pub mod payment_notice;
+pub mod payroll_transfer;
+pub mod transfer_account_inquiry;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum ParsedFile {
+    GeneralTransfer(general_transfer::File),
+    PayrollTransfer(payroll_transfer::File),
     AccountTransfer(account_transfer::File),
     AccountTransferResult(account_transfer_result::File),
+    TransferAccountInquiry(transfer_account_inquiry::File),
+    PaymentNotice(payment_notice::File),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
     Auto,
+    GeneralTransfer,
+    PayrollTransfer,
     AccountTransfer,
     AccountTransferResult,
+    TransferAccountInquiry,
+    PaymentNotice,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CodeDivision {
+    #[default]
+    Jis,
+    Ebcdic,
+}
+
+impl CodeDivision {
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::Jis => 0,
+            Self::Ebcdic => 1,
+        }
+    }
+
+    pub const fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Jis),
+            1 => Some(Self::Ebcdic),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for CodeDivision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(self.as_u8())
+    }
+}
+
+impl<'de> Deserialize<'de> for CodeDivision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = CodeDivision;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("0 or 1")
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let value = u8::try_from(value).map_err(E::custom)?;
+                CodeDivision::from_u8(value)
+                    .ok_or_else(|| E::custom(format!("invalid code division {value}")))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "0" => Ok(CodeDivision::Jis),
+                    "1" => Ok(CodeDivision::Ebcdic),
+                    other => Err(E::custom(format!("invalid code division {other:?}"))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,11 +218,25 @@ pub fn parse(input: &[u8]) -> Result<ParsedFile, Error> {
 pub fn parse_as(input: &[u8], file_type: FileType) -> Result<ParsedFile, Error> {
     match file_type {
         FileType::Auto => parse_auto(input),
+        FileType::GeneralTransfer => parse_general_transfer(input).map(ParsedFile::GeneralTransfer),
+        FileType::PayrollTransfer => parse_payroll_transfer(input).map(ParsedFile::PayrollTransfer),
         FileType::AccountTransfer => parse_account_transfer(input).map(ParsedFile::AccountTransfer),
         FileType::AccountTransferResult => {
             parse_account_transfer_result(input).map(ParsedFile::AccountTransferResult)
         }
+        FileType::TransferAccountInquiry => {
+            parse_transfer_account_inquiry(input).map(ParsedFile::TransferAccountInquiry)
+        }
+        FileType::PaymentNotice => parse_payment_notice(input).map(ParsedFile::PaymentNotice),
     }
+}
+
+pub fn parse_general_transfer(input: &[u8]) -> Result<general_transfer::File, Error> {
+    general_transfer::parse(input)
+}
+
+pub fn parse_payroll_transfer(input: &[u8]) -> Result<payroll_transfer::File, Error> {
+    payroll_transfer::parse(input)
 }
 
 pub fn parse_account_transfer(input: &[u8]) -> Result<account_transfer::File, Error> {
@@ -147,19 +247,74 @@ pub fn parse_account_transfer_result(input: &[u8]) -> Result<account_transfer_re
     account_transfer_result::parse(input)
 }
 
-fn parse_auto(input: &[u8]) -> Result<ParsedFile, Error> {
-    let account_transfer = account_transfer::parse(input);
-    let account_transfer_result = account_transfer_result::parse(input);
+pub fn parse_transfer_account_inquiry(
+    input: &[u8],
+) -> Result<transfer_account_inquiry::File, Error> {
+    transfer_account_inquiry::parse(input)
+}
 
-    match (account_transfer, account_transfer_result) {
-        (Ok(file), Err(_)) => Ok(ParsedFile::AccountTransfer(file)),
-        (Err(_), Ok(file)) => Ok(ParsedFile::AccountTransferResult(file)),
-        (Ok(_), Ok(_)) => Err(Error::AmbiguousInput(
-            "input is valid as both an account transfer request and result file; pass an explicit file type".to_string(),
+pub fn parse_payment_notice(input: &[u8]) -> Result<payment_notice::File, Error> {
+    payment_notice::parse(input)
+}
+
+fn parse_auto(input: &[u8]) -> Result<ParsedFile, Error> {
+    let mut matches = Vec::new();
+    let mut errors = Vec::new();
+
+    match general_transfer::parse(input) {
+        Ok(file) => matches.push(("general transfer", ParsedFile::GeneralTransfer(file))),
+        Err(error) => errors.push(("general transfer", error)),
+    }
+    match payroll_transfer::parse(input) {
+        Ok(file) => matches.push(("payroll transfer", ParsedFile::PayrollTransfer(file))),
+        Err(error) => errors.push(("payroll transfer", error)),
+    }
+    match account_transfer::parse(input) {
+        Ok(file) => matches.push((
+            "account transfer request",
+            ParsedFile::AccountTransfer(file),
         )),
-        (Err(account_transfer_error), Err(account_transfer_result_error)) => {
+        Err(error) => errors.push(("account transfer request", error)),
+    }
+    match account_transfer_result::parse(input) {
+        Ok(file) => matches.push((
+            "account transfer result",
+            ParsedFile::AccountTransferResult(file),
+        )),
+        Err(error) => errors.push(("account transfer result", error)),
+    }
+    match transfer_account_inquiry::parse(input) {
+        Ok(file) => matches.push((
+            "transfer account inquiry",
+            ParsedFile::TransferAccountInquiry(file),
+        )),
+        Err(error) => errors.push(("transfer account inquiry", error)),
+    }
+    match payment_notice::parse(input) {
+        Ok(file) => matches.push(("payment notice", ParsedFile::PaymentNotice(file))),
+        Err(error) => errors.push(("payment notice", error)),
+    }
+
+    match matches.len() {
+        1 => Ok(matches.pop().expect("one match").1),
+        0 => {
+            let summary = errors
+                .into_iter()
+                .map(|(name, error)| format!("{name}: {error}"))
+                .collect::<Vec<_>>()
+                .join("; ");
             Err(Error::InvalidInput(format!(
-                "unsupported account transfer file: request parse failed with {account_transfer_error}; result parse failed with {account_transfer_result_error}"
+                "unsupported zengin file: {summary}"
+            )))
+        }
+        _ => {
+            let names = matches
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(Error::AmbiguousInput(format!(
+                "input is valid as both or more supported file types ({names}); pass an explicit file type"
             )))
         }
     }
@@ -169,9 +324,104 @@ pub fn to_bytes<T>(value: &T, format: OutputFormat) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
+    to_bytes_as(value, FileType::Auto, format)
+}
+
+pub fn to_bytes_as<T>(
+    value: &T,
+    file_type: FileType,
+    format: OutputFormat,
+) -> Result<Vec<u8>, Error>
+where
+    T: Serialize,
+{
     let value = serde_json::to_value(value)?;
-    let file: account_transfer::File = serde_json::from_value(value)?;
-    account_transfer::write(&file, format)
+    match file_type {
+        FileType::Auto => write_auto_value(&value, format),
+        FileType::GeneralTransfer => {
+            write_value_as::<general_transfer::File>(&value, format, general_transfer::write)
+        }
+        FileType::PayrollTransfer => {
+            write_value_as::<payroll_transfer::File>(&value, format, payroll_transfer::write)
+        }
+        FileType::AccountTransfer => {
+            write_value_as::<account_transfer::File>(&value, format, account_transfer::write)
+        }
+        FileType::AccountTransferResult => write_value_as::<account_transfer_result::File>(
+            &value,
+            format,
+            account_transfer_result::write,
+        ),
+        FileType::TransferAccountInquiry => write_value_as::<transfer_account_inquiry::File>(
+            &value,
+            format,
+            transfer_account_inquiry::write,
+        ),
+        FileType::PaymentNotice => {
+            write_value_as::<payment_notice::File>(&value, format, payment_notice::write)
+        }
+    }
+}
+
+fn write_value_as<T>(
+    value: &serde_json::Value,
+    format: OutputFormat,
+    write: fn(&T, OutputFormat) -> Result<Vec<u8>, Error>,
+) -> Result<Vec<u8>, Error>
+where
+    T: DeserializeOwned,
+{
+    let file = serde_json::from_value(value.clone())?;
+    write(&file, format)
+}
+
+fn write_auto_value(value: &serde_json::Value, format: OutputFormat) -> Result<Vec<u8>, Error> {
+    let mut matches = Vec::new();
+
+    if let Ok(file) = serde_json::from_value::<general_transfer::File>(value.clone()) {
+        matches.push(("general transfer", general_transfer::write(&file, format)?));
+    }
+    if let Ok(file) = serde_json::from_value::<payroll_transfer::File>(value.clone()) {
+        matches.push(("payroll transfer", payroll_transfer::write(&file, format)?));
+    }
+    if let Ok(file) = serde_json::from_value::<account_transfer::File>(value.clone()) {
+        matches.push((
+            "account transfer request",
+            account_transfer::write(&file, format)?,
+        ));
+    }
+    if let Ok(file) = serde_json::from_value::<account_transfer_result::File>(value.clone()) {
+        matches.push((
+            "account transfer result",
+            account_transfer_result::write(&file, format)?,
+        ));
+    }
+    if let Ok(file) = serde_json::from_value::<transfer_account_inquiry::File>(value.clone()) {
+        matches.push((
+            "transfer account inquiry",
+            transfer_account_inquiry::write(&file, format)?,
+        ));
+    }
+    if let Ok(file) = serde_json::from_value::<payment_notice::File>(value.clone()) {
+        matches.push(("payment notice", payment_notice::write(&file, format)?));
+    }
+
+    match matches.len() {
+        1 => Ok(matches.pop().expect("one match").1),
+        0 => Err(Error::InvalidInput(
+            "unsupported zengin output value; pass a supported file type".to_string(),
+        )),
+        _ => {
+            let names = matches
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(Error::AmbiguousInput(format!(
+                "value can be written as multiple supported file types ({names}); pass an explicit file type"
+            )))
+        }
+    }
 }
 
 #[cfg(doctest)]
@@ -182,16 +432,17 @@ mod readme_doctests {
 #[cfg(test)]
 mod tests {
     use super::{
-        Encoding, Error, FileType, LineEnding, OutputFormat, account_transfer::Detail,
-        account_transfer::End, account_transfer::File, account_transfer::Header,
-        account_transfer::Trailer, from_bytes_as, parse_account_transfer, to_bytes,
+        CodeDivision, Encoding, Error, FileType, LineEnding, OutputFormat,
+        account_transfer::Detail, account_transfer::End, account_transfer::File,
+        account_transfer::Header, account_transfer::Trailer, from_bytes_as, parse_account_transfer,
+        to_bytes,
     };
 
     fn sample_file() -> File {
         File {
             header: Header {
                 kind_code: 91,
-                code_division: "0".to_string(),
+                code_division: CodeDivision::Jis,
                 collector_code: "1234567890".to_string(),
                 collection_date: "0430".to_string(),
                 collector_name: "ACME COLLECT".to_string(),
@@ -226,7 +477,7 @@ mod tests {
         File {
             header: Header {
                 kind_code: 91,
-                code_division: "0".to_string(),
+                code_division: CodeDivision::Jis,
                 collector_code: "1234567890".to_string(),
                 collection_date: "0430".to_string(),
                 collector_name: "ﾃｽﾄｼｭｳｷﾝ".to_string(),

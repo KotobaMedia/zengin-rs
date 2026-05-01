@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Encoding, Error};
+use crate::{CodeDivision, Encoding, Error, OutputFormat, fixed};
 
 const RECORD_LEN: usize = 120;
 
@@ -15,7 +15,8 @@ pub struct File {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Header {
     pub kind_code: u8,
-    pub code_division: u8,
+    #[serde(default)]
+    pub code_division: CodeDivision,
     pub collector_code: String,
     pub collector_name: String,
     pub collection_date: String,
@@ -56,7 +57,7 @@ pub struct Trailer {
 pub struct End;
 
 pub(crate) fn parse(input: &[u8]) -> Result<File, Error> {
-    let records = split_records(input)?;
+    let records = fixed::split_records(input, RECORD_LEN)?;
     if records.len() < 4 {
         return Err(Error::InvalidInput(
             "expected header, detail, trailer, and end records".to_string(),
@@ -79,6 +80,19 @@ pub(crate) fn parse(input: &[u8]) -> Result<File, Error> {
     };
     file.validate()?;
     Ok(file)
+}
+
+pub(crate) fn write(file: &File, format: OutputFormat) -> Result<Vec<u8>, Error> {
+    file.validate()?;
+    fixed::ensure_supported_output_encoding(format.encoding)?;
+
+    let mut records = Vec::with_capacity(file.details.len() + 3);
+    records.push(render_header(&file.header, format.encoding)?);
+    records.extend(render_details(&file.details, format.encoding)?);
+    records.push(render_trailer(&file.trailer)?);
+    records.push(render_end(&file.end));
+
+    Ok(fixed::write_records(records, format))
 }
 
 impl File {
@@ -166,77 +180,303 @@ impl File {
             }
         }
 
-        validate_count_width("trailer", "total_count", self.trailer.total_count)?;
-        validate_amount_width("trailer", "total_amount", self.trailer.total_amount)?;
-        validate_count_width("trailer", "success_count", self.trailer.success_count)?;
-        validate_amount_width("trailer", "success_amount", self.trailer.success_amount)?;
-        validate_count_width("trailer", "failure_count", self.trailer.failure_count)?;
-        validate_amount_width("trailer", "failure_amount", self.trailer.failure_amount)?;
+        fixed::validate_count_width("trailer", "total_count", self.trailer.total_count)?;
+        fixed::validate_amount_width("trailer", "total_amount", self.trailer.total_amount)?;
+        fixed::validate_count_width("trailer", "success_count", self.trailer.success_count)?;
+        fixed::validate_amount_width("trailer", "success_amount", self.trailer.success_amount)?;
+        fixed::validate_count_width("trailer", "failure_count", self.trailer.failure_count)?;
+        fixed::validate_amount_width("trailer", "failure_amount", self.trailer.failure_amount)?;
 
         Ok(())
     }
 }
 
-fn parse_header(record: &[u8]) -> Result<Header, Error> {
-    ensure_record_type(record, "header", b'1')?;
+fn render_header(header: &Header, encoding: Encoding) -> Result<[u8; RECORD_LEN], Error> {
+    validate_header(header)?;
 
-    let kind_code = parse_number(record, 1..3, "header", "kind_code")? as u8;
-    let code_division = parse_number(record, 3..4, "header", "code_division")? as u8;
-    ensure_supported_encoding(code_division, "header", "code_division")?;
-    ensure_spaces(record, 103..120, "header", "padding")?;
+    let mut record = fixed::blank_record(b'1');
+    fixed::put_number(
+        &mut record,
+        1..3,
+        header.kind_code.into(),
+        "header",
+        "kind_code",
+    )?;
+    fixed::put_code_division(
+        &mut record,
+        3..4,
+        header.code_division,
+        "header",
+        "code_division",
+    )?;
+    fixed::put_digits(
+        &mut record,
+        4..14,
+        &header.collector_code,
+        "header",
+        "collector_code",
+    )?;
+    fixed::put_required_text(
+        &mut record,
+        14..54,
+        &header.collector_name,
+        "header",
+        "collector_name",
+        encoding,
+    )?;
+    fixed::put_digits(
+        &mut record,
+        54..58,
+        &header.collection_date,
+        "header",
+        "collection_date",
+    )?;
+    fixed::put_digits(
+        &mut record,
+        58..62,
+        &header.bank_code,
+        "header",
+        "bank_code",
+    )?;
+    fixed::put_required_text(
+        &mut record,
+        62..77,
+        &header.bank_name,
+        "header",
+        "bank_name",
+        encoding,
+    )?;
+    fixed::put_digits(
+        &mut record,
+        77..80,
+        &header.branch_code,
+        "header",
+        "branch_code",
+    )?;
+    fixed::put_optional_text(
+        &mut record,
+        80..95,
+        &header.branch_name,
+        "header",
+        "branch_name",
+        encoding,
+    )?;
+    fixed::put_number(
+        &mut record,
+        95..96,
+        header.account_type.into(),
+        "header",
+        "account_type",
+    )?;
+    fixed::put_digits(
+        &mut record,
+        96..103,
+        &header.account_number,
+        "header",
+        "account_number",
+    )?;
+    Ok(record)
+}
+
+fn render_details(details: &[Detail], encoding: Encoding) -> Result<Vec<[u8; RECORD_LEN]>, Error> {
+    details
+        .iter()
+        .map(|detail| render_detail(detail, encoding))
+        .collect()
+}
+
+fn render_detail(detail: &Detail, encoding: Encoding) -> Result<[u8; RECORD_LEN], Error> {
+    validate_detail(detail)?;
+
+    let mut record = fixed::blank_record(b'2');
+    fixed::put_digits(&mut record, 1..5, &detail.bank_code, "detail", "bank_code")?;
+    fixed::put_required_text(
+        &mut record,
+        5..20,
+        &detail.bank_name,
+        "detail",
+        "bank_name",
+        encoding,
+    )?;
+    fixed::put_digits(
+        &mut record,
+        20..23,
+        &detail.branch_code,
+        "detail",
+        "branch_code",
+    )?;
+    fixed::put_optional_text(
+        &mut record,
+        23..38,
+        &detail.branch_name,
+        "detail",
+        "branch_name",
+        encoding,
+    )?;
+    fixed::put_number(
+        &mut record,
+        42..43,
+        detail.account_type.into(),
+        "detail",
+        "account_type",
+    )?;
+    fixed::put_digits(
+        &mut record,
+        43..50,
+        &detail.account_number,
+        "detail",
+        "account_number",
+    )?;
+    fixed::put_required_text(
+        &mut record,
+        50..80,
+        &detail.account_holder_name,
+        "detail",
+        "account_holder_name",
+        encoding,
+    )?;
+    fixed::put_number(&mut record, 80..90, detail.amount, "detail", "amount")?;
+    fixed::put_number(
+        &mut record,
+        90..91,
+        detail.new_code.into(),
+        "detail",
+        "new_code",
+    )?;
+    fixed::put_optional_text(
+        &mut record,
+        91..111,
+        &detail.customer_number,
+        "detail",
+        "customer_number",
+        encoding,
+    )?;
+    fixed::put_number(
+        &mut record,
+        111..112,
+        detail.result_code.into(),
+        "detail",
+        "result_code",
+    )?;
+    Ok(record)
+}
+
+fn render_trailer(trailer: &Trailer) -> Result<[u8; RECORD_LEN], Error> {
+    let mut record = fixed::blank_record(b'8');
+    fixed::put_number(
+        &mut record,
+        1..7,
+        trailer.total_count.into(),
+        "trailer",
+        "total_count",
+    )?;
+    fixed::put_number(
+        &mut record,
+        7..19,
+        trailer.total_amount,
+        "trailer",
+        "total_amount",
+    )?;
+    fixed::put_number(
+        &mut record,
+        19..25,
+        trailer.success_count.into(),
+        "trailer",
+        "success_count",
+    )?;
+    fixed::put_number(
+        &mut record,
+        25..37,
+        trailer.success_amount,
+        "trailer",
+        "success_amount",
+    )?;
+    fixed::put_number(
+        &mut record,
+        37..43,
+        trailer.failure_count.into(),
+        "trailer",
+        "failure_count",
+    )?;
+    fixed::put_number(
+        &mut record,
+        43..55,
+        trailer.failure_amount,
+        "trailer",
+        "failure_amount",
+    )?;
+    Ok(record)
+}
+
+fn render_end(_end: &End) -> [u8; RECORD_LEN] {
+    fixed::blank_record(b'9')
+}
+
+fn parse_header(record: &[u8]) -> Result<Header, Error> {
+    fixed::ensure_record_type(record, "header", b'1')?;
+
+    let kind_code = fixed::parse_number(record, 1..3, "header", "kind_code")? as u8;
+    let code_division = fixed::parse_code_division(record, 3..4, "header", "code_division")?;
+    fixed::ensure_supported_code_division(code_division, "header", "code_division")?;
+    fixed::ensure_spaces(record, 103..120, "header", "padding")?;
 
     Ok(Header {
         kind_code,
         code_division,
-        collector_code: parse_digit_string(record, 4..14, "header", "collector_code")?,
-        collector_name: parse_required_text(record, 14..54, "header", "collector_name")?,
-        collection_date: parse_digit_string(record, 54..58, "header", "collection_date")?,
-        bank_code: parse_digit_string(record, 58..62, "header", "bank_code")?,
-        bank_name: parse_required_text(record, 62..77, "header", "bank_name")?,
-        branch_code: parse_digit_string(record, 77..80, "header", "branch_code")?,
-        branch_name: parse_optional_text(record, 80..95, "header", "branch_name")?,
-        account_type: parse_number(record, 95..96, "header", "account_type")? as u8,
-        account_number: parse_digit_string(record, 96..103, "header", "account_number")?,
+        collector_code: fixed::parse_digit_string(record, 4..14, "header", "collector_code")?,
+        collector_name: fixed::parse_required_text(record, 14..54, "header", "collector_name")?,
+        collection_date: fixed::parse_digit_string(record, 54..58, "header", "collection_date")?,
+        bank_code: fixed::parse_digit_string(record, 58..62, "header", "bank_code")?,
+        bank_name: fixed::parse_required_text(record, 62..77, "header", "bank_name")?,
+        branch_code: fixed::parse_digit_string(record, 77..80, "header", "branch_code")?,
+        branch_name: fixed::parse_optional_text(record, 80..95, "header", "branch_name")?,
+        account_type: fixed::parse_number(record, 95..96, "header", "account_type")? as u8,
+        account_number: fixed::parse_digit_string(record, 96..103, "header", "account_number")?,
     })
 }
 
 fn parse_detail(record: &[u8]) -> Result<Detail, Error> {
-    ensure_record_type(record, "detail", b'2')?;
-    ensure_spaces(record, 38..42, "detail", "bank_padding")?;
-    ensure_spaces(record, 112..120, "detail", "padding")?;
+    fixed::ensure_record_type(record, "detail", b'2')?;
+    fixed::ensure_spaces(record, 38..42, "detail", "bank_padding")?;
+    fixed::ensure_spaces(record, 112..120, "detail", "padding")?;
 
     Ok(Detail {
-        bank_code: parse_digit_string(record, 1..5, "detail", "bank_code")?,
-        bank_name: parse_required_text(record, 5..20, "detail", "bank_name")?,
-        branch_code: parse_digit_string(record, 20..23, "detail", "branch_code")?,
-        branch_name: parse_optional_text(record, 23..38, "detail", "branch_name")?,
-        account_type: parse_number(record, 42..43, "detail", "account_type")? as u8,
-        account_number: parse_digit_string(record, 43..50, "detail", "account_number")?,
-        account_holder_name: parse_required_text(record, 50..80, "detail", "account_holder_name")?,
-        amount: parse_number(record, 80..90, "detail", "amount")?,
-        new_code: parse_number(record, 90..91, "detail", "new_code")? as u8,
-        customer_number: parse_optional_text(record, 91..111, "detail", "customer_number")?,
-        result_code: parse_number(record, 111..112, "detail", "result_code")? as u8,
+        bank_code: fixed::parse_digit_string(record, 1..5, "detail", "bank_code")?,
+        bank_name: fixed::parse_required_text(record, 5..20, "detail", "bank_name")?,
+        branch_code: fixed::parse_digit_string(record, 20..23, "detail", "branch_code")?,
+        branch_name: fixed::parse_optional_text(record, 23..38, "detail", "branch_name")?,
+        account_type: fixed::parse_number(record, 42..43, "detail", "account_type")? as u8,
+        account_number: fixed::parse_digit_string(record, 43..50, "detail", "account_number")?,
+        account_holder_name: fixed::parse_required_text(
+            record,
+            50..80,
+            "detail",
+            "account_holder_name",
+        )?,
+        amount: fixed::parse_number(record, 80..90, "detail", "amount")?,
+        new_code: fixed::parse_number(record, 90..91, "detail", "new_code")? as u8,
+        customer_number: fixed::parse_optional_text(record, 91..111, "detail", "customer_number")?,
+        result_code: fixed::parse_number(record, 111..112, "detail", "result_code")? as u8,
     })
 }
 
 fn parse_trailer(record: &[u8]) -> Result<Trailer, Error> {
-    ensure_record_type(record, "trailer", b'8')?;
-    ensure_spaces(record, 55..120, "trailer", "padding")?;
+    fixed::ensure_record_type(record, "trailer", b'8')?;
+    fixed::ensure_spaces(record, 55..120, "trailer", "padding")?;
 
     Ok(Trailer {
-        total_count: parse_number(record, 1..7, "trailer", "total_count")? as u32,
-        total_amount: parse_number(record, 7..19, "trailer", "total_amount")?,
-        success_count: parse_number(record, 19..25, "trailer", "success_count")? as u32,
-        success_amount: parse_number(record, 25..37, "trailer", "success_amount")?,
-        failure_count: parse_number(record, 37..43, "trailer", "failure_count")? as u32,
-        failure_amount: parse_number(record, 43..55, "trailer", "failure_amount")?,
+        total_count: fixed::parse_number(record, 1..7, "trailer", "total_count")? as u32,
+        total_amount: fixed::parse_number(record, 7..19, "trailer", "total_amount")?,
+        success_count: fixed::parse_number(record, 19..25, "trailer", "success_count")? as u32,
+        success_amount: fixed::parse_number(record, 25..37, "trailer", "success_amount")?,
+        failure_count: fixed::parse_number(record, 37..43, "trailer", "failure_count")? as u32,
+        failure_amount: fixed::parse_number(record, 43..55, "trailer", "failure_amount")?,
     })
 }
 
 fn parse_end(record: &[u8]) -> Result<End, Error> {
-    ensure_record_type(record, "end", b'9')?;
-    ensure_spaces(record, 1..120, "end", "padding")?;
+    fixed::ensure_record_type(record, "end", b'9')?;
+    fixed::ensure_spaces(record, 1..120, "end", "padding")?;
     Ok(End)
 }
 
@@ -248,334 +488,44 @@ fn validate_header(header: &Header) -> Result<(), Error> {
         )));
     }
 
-    ensure_supported_encoding(header.code_division, "header", "code_division")?;
-    validate_digit_str("header", "collector_code", &header.collector_code, 10)?;
-    validate_text_value("header", "collector_name", &header.collector_name)?;
-    validate_digit_str("header", "collection_date", &header.collection_date, 4)?;
-    validate_digit_str("header", "bank_code", &header.bank_code, 4)?;
-    validate_text_value("header", "bank_name", &header.bank_name)?;
-    validate_digit_str("header", "branch_code", &header.branch_code, 3)?;
-    validate_text_value_allow_empty("header", "branch_name", &header.branch_name)?;
-    validate_numeric_width("header", "account_type", header.account_type.into(), 1)?;
-    validate_digit_str("header", "account_number", &header.account_number, 7)?;
+    fixed::ensure_supported_code_division(header.code_division, "header", "code_division")?;
+    fixed::validate_digit_str("header", "collector_code", &header.collector_code, 10)?;
+    fixed::validate_text_value("header", "collector_name", &header.collector_name)?;
+    fixed::validate_digit_str("header", "collection_date", &header.collection_date, 4)?;
+    fixed::validate_digit_str("header", "bank_code", &header.bank_code, 4)?;
+    fixed::validate_text_value("header", "bank_name", &header.bank_name)?;
+    fixed::validate_digit_str("header", "branch_code", &header.branch_code, 3)?;
+    fixed::validate_text_value_allow_empty("header", "branch_name", &header.branch_name)?;
+    fixed::validate_numeric_width("header", "account_type", header.account_type.into(), 1)?;
+    fixed::validate_digit_str("header", "account_number", &header.account_number, 7)?;
     Ok(())
 }
 
 fn validate_detail(detail: &Detail) -> Result<(), Error> {
-    validate_digit_str("detail", "bank_code", &detail.bank_code, 4)?;
-    validate_text_value("detail", "bank_name", &detail.bank_name)?;
-    validate_digit_str("detail", "branch_code", &detail.branch_code, 3)?;
-    validate_text_value_allow_empty("detail", "branch_name", &detail.branch_name)?;
-    validate_numeric_width("detail", "account_type", detail.account_type.into(), 1)?;
-    validate_digit_str("detail", "account_number", &detail.account_number, 7)?;
-    validate_text_value("detail", "account_holder_name", &detail.account_holder_name)?;
-    validate_numeric_width("detail", "amount", detail.amount, 10)?;
-    validate_numeric_width("detail", "new_code", detail.new_code.into(), 1)?;
-    validate_text_value_allow_empty("detail", "customer_number", &detail.customer_number)?;
-    validate_numeric_width("detail", "result_code", detail.result_code.into(), 1)?;
+    fixed::validate_digit_str("detail", "bank_code", &detail.bank_code, 4)?;
+    fixed::validate_text_value("detail", "bank_name", &detail.bank_name)?;
+    fixed::validate_digit_str("detail", "branch_code", &detail.branch_code, 3)?;
+    fixed::validate_text_value_allow_empty("detail", "branch_name", &detail.branch_name)?;
+    fixed::validate_numeric_width("detail", "account_type", detail.account_type.into(), 1)?;
+    fixed::validate_digit_str("detail", "account_number", &detail.account_number, 7)?;
+    fixed::validate_text_value("detail", "account_holder_name", &detail.account_holder_name)?;
+    fixed::validate_numeric_width("detail", "amount", detail.amount, 10)?;
+    fixed::validate_numeric_width("detail", "new_code", detail.new_code.into(), 1)?;
+    fixed::validate_text_value_allow_empty("detail", "customer_number", &detail.customer_number)?;
+    fixed::validate_numeric_width("detail", "result_code", detail.result_code.into(), 1)?;
     Ok(())
-}
-
-fn split_records(input: &[u8]) -> Result<Vec<&[u8]>, Error> {
-    let input = strip_optional_eof(input);
-    if input.is_empty() {
-        return Err(Error::InvalidInput("input is empty".to_string()));
-    }
-
-    if input.contains(&b'\n') {
-        let mut lines = input.split(|byte| *byte == b'\n').collect::<Vec<_>>();
-        if lines.last().is_some_and(|line| line.is_empty()) {
-            lines.pop();
-        }
-
-        if lines.is_empty() {
-            return Err(Error::InvalidInput(
-                "input does not contain any records".to_string(),
-            ));
-        }
-
-        let mut records = Vec::with_capacity(lines.len());
-        for (index, line) in lines.into_iter().enumerate() {
-            let line = line.strip_suffix(b"\r").unwrap_or(line);
-            if line.contains(&b'\r') {
-                return Err(Error::InvalidInput(format!(
-                    "record {} contains an unexpected CR byte",
-                    index + 1
-                )));
-            }
-            ensure_record_len(line, index + 1)?;
-            records.push(line);
-        }
-        return Ok(records);
-    }
-
-    if input.contains(&b'\r') {
-        return Err(Error::InvalidInput(
-            "bare CR line endings are not supported".to_string(),
-        ));
-    }
-
-    if !input.len().is_multiple_of(RECORD_LEN) {
-        return Err(Error::InvalidInput(format!(
-            "canonical input length must be a multiple of {RECORD_LEN}, got {}",
-            input.len()
-        )));
-    }
-
-    let mut records = Vec::with_capacity(input.len() / RECORD_LEN);
-    for (index, record) in input.chunks(RECORD_LEN).enumerate() {
-        ensure_record_len(record, index + 1)?;
-        records.push(record);
-    }
-    Ok(records)
-}
-
-fn strip_optional_eof(input: &[u8]) -> &[u8] {
-    input.strip_suffix(&[0x1a]).unwrap_or(input)
-}
-
-fn ensure_record_len(record: &[u8], index: usize) -> Result<(), Error> {
-    if record.len() != RECORD_LEN {
-        return Err(Error::InvalidInput(format!(
-            "record {index} must be {RECORD_LEN} bytes, got {}",
-            record.len()
-        )));
-    }
-
-    Ok(())
-}
-
-fn ensure_record_type(record: &[u8], record_name: &'static str, expected: u8) -> Result<(), Error> {
-    if record[0] != expected {
-        return Err(Error::InvalidInput(format!(
-            "{record_name} record must start with {}, got {}",
-            expected as char, record[0] as char
-        )));
-    }
-
-    Ok(())
-}
-
-fn ensure_spaces(
-    record: &[u8],
-    range: core::ops::Range<usize>,
-    record_name: &'static str,
-    field: &'static str,
-) -> Result<(), Error> {
-    if !record[range.clone()].iter().all(|byte| *byte == b' ') {
-        return Err(Error::InvalidField {
-            record: record_name,
-            field,
-            message: "must be space padded".to_string(),
-        });
-    }
-
-    Ok(())
-}
-
-fn ensure_supported_encoding(
-    code_division: u8,
-    record: &'static str,
-    field: &'static str,
-) -> Result<(), Error> {
-    match code_division {
-        0 => Ok(()),
-        1 => Err(Error::UnsupportedEncoding(Encoding::Ebcdic)),
-        other => Err(Error::InvalidField {
-            record,
-            field,
-            message: format!("must be 0 or 1, got {other}"),
-        }),
-    }
-}
-
-fn parse_required_text(
-    record: &[u8],
-    range: core::ops::Range<usize>,
-    record_name: &'static str,
-    field: &'static str,
-) -> Result<String, Error> {
-    let value = parse_optional_text(record, range, record_name, field)?;
-    validate_text_value(record_name, field, &value)?;
-    Ok(value)
-}
-
-fn parse_optional_text(
-    record: &[u8],
-    range: core::ops::Range<usize>,
-    record_name: &'static str,
-    field: &'static str,
-) -> Result<String, Error> {
-    let value = decode_jis_text(&record[range], record_name, field)?;
-    let value = value.trim_end_matches(' ').to_string();
-    validate_text_value_allow_empty(record_name, field, &value)?;
-    Ok(value)
-}
-
-fn decode_jis_text(
-    bytes: &[u8],
-    record: &'static str,
-    field: &'static str,
-) -> Result<String, Error> {
-    let mut value = String::with_capacity(bytes.len());
-    for (index, byte) in bytes.iter().copied().enumerate() {
-        let ch = decode_jis_char(byte).ok_or_else(|| Error::InvalidField {
-            record,
-            field,
-            message: format!("invalid JIS X 0201 byte 0x{byte:02X} at offset {index}"),
-        })?;
-        value.push(ch);
-    }
-    Ok(value)
-}
-
-fn decode_jis_char(byte: u8) -> Option<char> {
-    match byte {
-        0x20..=0x7E => Some(byte as char),
-        0xA1..=0xDF => char::from_u32(u32::from(byte) - 0xA1 + 0xFF61),
-        _ => None,
-    }
-}
-
-fn parse_digit_string(
-    record: &[u8],
-    range: core::ops::Range<usize>,
-    record_name: &'static str,
-    field: &'static str,
-) -> Result<String, Error> {
-    let value =
-        core::str::from_utf8(&record[range.clone()]).map_err(|error| Error::InvalidField {
-            record: record_name,
-            field,
-            message: error.to_string(),
-        })?;
-    validate_digit_str(record_name, field, value, range.len())?;
-    Ok(value.to_string())
-}
-
-fn parse_number(
-    record: &[u8],
-    range: core::ops::Range<usize>,
-    record_name: &'static str,
-    field: &'static str,
-) -> Result<u64, Error> {
-    let value = parse_digit_string(record, range, record_name, field)?;
-    value.parse::<u64>().map_err(|error| Error::InvalidField {
-        record: record_name,
-        field,
-        message: error.to_string(),
-    })
-}
-
-fn validate_digit_str(
-    record: &'static str,
-    field: &'static str,
-    value: &str,
-    width: usize,
-) -> Result<(), Error> {
-    if value.len() != width {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: format!("must be exactly {width} digits, got {}", value.len()),
-        });
-    }
-
-    if !value.as_bytes().iter().all(u8::is_ascii_digit) {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: "must contain only ASCII digits".to_string(),
-        });
-    }
-
-    Ok(())
-}
-
-fn validate_text_value(
-    record: &'static str,
-    field: &'static str,
-    value: &str,
-) -> Result<(), Error> {
-    if value.is_empty() {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: "must not be empty".to_string(),
-        });
-    }
-
-    if value.chars().any(char::is_control) {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: "must not contain control characters".to_string(),
-        });
-    }
-
-    Ok(())
-}
-
-fn validate_text_value_allow_empty(
-    record: &'static str,
-    field: &'static str,
-    value: &str,
-) -> Result<(), Error> {
-    if value.chars().any(char::is_control) {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: "must not contain control characters".to_string(),
-        });
-    }
-
-    Ok(())
-}
-
-fn validate_numeric_width(
-    record: &'static str,
-    field: &'static str,
-    value: u64,
-    width: usize,
-) -> Result<(), Error> {
-    let formatted = format!("{value}");
-    if formatted.len() > width {
-        return Err(Error::InvalidField {
-            record,
-            field,
-            message: format!("must fit within {width} digits, got {}", formatted.len()),
-        });
-    }
-
-    Ok(())
-}
-
-fn validate_count_width(
-    record: &'static str,
-    field: &'static str,
-    value: u32,
-) -> Result<(), Error> {
-    validate_numeric_width(record, field, value.into(), 6)
-}
-
-fn validate_amount_width(
-    record: &'static str,
-    field: &'static str,
-    value: u64,
-) -> Result<(), Error> {
-    validate_numeric_width(record, field, value, 12)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Detail, End, File, Header, Trailer, parse};
-    use crate::{Encoding, Error};
+    use crate::{CodeDivision, Encoding, Error, OutputFormat, to_bytes};
 
     fn sample_file() -> File {
         File {
             header: Header {
                 kind_code: 91,
-                code_division: 0,
+                code_division: CodeDivision::Jis,
                 collector_code: "1234567890".to_string(),
                 collector_name: "ACME COLLECTOR".to_string(),
                 collection_date: "0422".to_string(),
@@ -645,7 +595,7 @@ mod tests {
             format!(
                 "1{:02}{}{}{}{}{}{}{}{}{}{}",
                 file.header.kind_code,
-                file.header.code_division,
+                file.header.code_division.as_u8(),
                 file.header.collector_code,
                 pad_text(&file.header.collector_name, 40),
                 file.header.collection_date,
@@ -701,6 +651,15 @@ mod tests {
     fn parses_result_file_layout() {
         let decoded = parse(&sample_bytes()).unwrap();
         assert_eq!(decoded, sample_file());
+    }
+
+    #[test]
+    fn roundtrips_result_file_layout() {
+        let file = sample_file();
+        let encoded = to_bytes(&file, OutputFormat::readable()).unwrap();
+
+        let decoded = parse(&encoded).unwrap();
+        assert_eq!(decoded, file);
     }
 
     #[test]

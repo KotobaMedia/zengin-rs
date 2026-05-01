@@ -30,16 +30,26 @@ struct Args {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum CliFileType {
     Auto,
+    GeneralTransfer,
+    PayrollTransfer,
+    #[value(alias = "account-transfer")]
     Request,
+    #[value(alias = "account-transfer-result")]
     Result,
+    TransferAccountInquiry,
+    PaymentNotice,
 }
 
 impl From<CliFileType> for FileType {
     fn from(file_type: CliFileType) -> Self {
         match file_type {
             CliFileType::Auto => Self::Auto,
+            CliFileType::GeneralTransfer => Self::GeneralTransfer,
+            CliFileType::PayrollTransfer => Self::PayrollTransfer,
             CliFileType::Request => Self::AccountTransfer,
             CliFileType::Result => Self::AccountTransferResult,
+            CliFileType::TransferAccountInquiry => Self::TransferAccountInquiry,
+            CliFileType::PaymentNotice => Self::PaymentNotice,
         }
     }
 }
@@ -94,6 +104,20 @@ where
 {
     if metadata_only {
         match file {
+            ParsedFile::GeneralTransfer(file) => serde_json::to_writer_pretty(
+                writer,
+                &MetadataOnly {
+                    header: &file.header,
+                    trailer: &file.trailer,
+                },
+            ),
+            ParsedFile::PayrollTransfer(file) => serde_json::to_writer_pretty(
+                writer,
+                &MetadataOnly {
+                    header: &file.header,
+                    trailer: &file.trailer,
+                },
+            ),
             ParsedFile::AccountTransfer(file) => serde_json::to_writer_pretty(
                 writer,
                 &MetadataOnly {
@@ -102,6 +126,20 @@ where
                 },
             ),
             ParsedFile::AccountTransferResult(file) => serde_json::to_writer_pretty(
+                writer,
+                &MetadataOnly {
+                    header: &file.header,
+                    trailer: &file.trailer,
+                },
+            ),
+            ParsedFile::TransferAccountInquiry(file) => serde_json::to_writer_pretty(
+                writer,
+                &MetadataOnly {
+                    header: &file.header,
+                    trailer: &file.trailer,
+                },
+            ),
+            ParsedFile::PaymentNotice(file) => serde_json::to_writer_pretty(
                 writer,
                 &MetadataOnly {
                     header: &file.header,

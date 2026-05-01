@@ -6,7 +6,7 @@ use std::{
 };
 
 use zengin_rs::{
-    OutputFormat,
+    CodeDivision, OutputFormat,
     account_transfer::{Detail, End, File, Header, Trailer},
     to_bytes,
 };
@@ -17,7 +17,7 @@ fn sample_file() -> File {
     File {
         header: Header {
             kind_code: 91,
-            code_division: "0".to_string(),
+            code_division: CodeDivision::Jis,
             collector_code: "1234567890".to_string(),
             collection_date: "0430".to_string(),
             collector_name: "ﾃｽﾄｼｭｳｷﾝ".to_string(),
