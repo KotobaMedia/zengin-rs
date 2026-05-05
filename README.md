@@ -31,35 +31,6 @@
 
 `Jis` のテキスト項目は Unicode では半角カナとして保持します。たとえば wire 上の JIS8 バイト列は、Rust 側では `"ﾔﾏﾀﾞﾀﾛｳ"` のような `String` として扱えます。JIS8 の対象外である全角カナ・ひらがな・漢字は、この実装ではまだ書き出しできません。
 
-## CLI
-
-`zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを JSON または CSV として標準出力へ出します。既定は JSON 出力と自動判別ですが、複数フォーマットとして解釈できる入力はエラーになります。その場合は `--type` で明示してください。CLI の入力サイズ上限は 10 MiB です。
-
-```bash
-cargo run -p zengin-cli -- --type request ./zengin.txt
-```
-
-指定できる主な `--type` は `general-transfer`, `payroll-transfer`, `request` (`account-transfer`), `result` (`account-transfer-result`), `transfer-account-inquiry`, `payment-notice` です。
-
-CSV として出力する場合は `--format csv` を指定します。CSV は `file_type`, `record_type`, `detail_index` と、各レコードのフィールドを持つレコード単位の表です。
-
-```bash
-cargo run -p zengin-cli -- --format csv --type request ./zengin.txt
-```
-
-ヘッダーとトレーラーだけを確認したい場合は、`--metadata-only` で明細とエンドレコードを省いた出力にできます。
-
-```bash
-cargo run -p zengin-cli -- --metadata-only --type result ./zengin.txt
-```
-
-インストールして使う場合:
-
-```bash
-cargo install --path crates/zengin-cli
-zengin --type request ./zengin.txt
-```
-
 ## 使い方
 
 ### 読み込み

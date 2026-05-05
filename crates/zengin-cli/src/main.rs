@@ -275,16 +275,15 @@ fn csv_records(
         });
     }
 
-    if !metadata_only
-        && let Some(serde_json::Value::Array(details)) = file.get("details") {
-            for (index, detail) in details.iter().enumerate() {
-                records.push(CsvRecord {
-                    record_type: "detail",
-                    detail_index: Some(index + 1),
-                    fields: record_fields(detail)?,
-                });
-            }
+    if !metadata_only && let Some(serde_json::Value::Array(details)) = file.get("details") {
+        for (index, detail) in details.iter().enumerate() {
+            records.push(CsvRecord {
+                record_type: "detail",
+                detail_index: Some(index + 1),
+                fields: record_fields(detail)?,
+            });
         }
+    }
 
     if let Some(trailer) = file.get("trailer") {
         records.push(CsvRecord {

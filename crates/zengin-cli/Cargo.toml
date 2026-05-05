@@ -2,9 +2,14 @@
 name = "zengin-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Command-line parser for Zengin fixed-width files"
 repository.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/zengin-cli"
+keywords = ["zengin", "fixed-width", "parser", "banking", "cli"]
+categories = ["command-line-utilities", "encoding", "parser-implementations"]
 
 [[bin]]
 name = "zengin"

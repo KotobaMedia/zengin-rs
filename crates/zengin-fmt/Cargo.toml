@@ -2,9 +2,14 @@
 name = "zengin-fmt"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description.workspace = true
 repository.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/zengin-fmt"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 serde.workspace = true
