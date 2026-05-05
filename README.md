@@ -33,7 +33,7 @@
 
 ## CLI
 
-`zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを JSON として標準出力へ出します。既定は自動判別ですが、複数フォーマットとして解釈できる入力はエラーになります。その場合は `--type` で明示してください。CLI の入力サイズ上限は 10 MiB です。
+`zengin` は入力ファイルを 1 つ受け取り、対応している全銀ファイルを JSON または CSV として標準出力へ出します。既定は JSON 出力と自動判別ですが、複数フォーマットとして解釈できる入力はエラーになります。その場合は `--type` で明示してください。CLI の入力サイズ上限は 10 MiB です。
 
 ```bash
 cargo run -p zengin-cli -- --type request ./zengin.txt
@@ -41,7 +41,13 @@ cargo run -p zengin-cli -- --type request ./zengin.txt
 
 指定できる主な `--type` は `general-transfer`, `payroll-transfer`, `request` (`account-transfer`), `result` (`account-transfer-result`), `transfer-account-inquiry`, `payment-notice` です。
 
-ヘッダーとトレーラーだけを確認したい場合は、`--metadata-only` で明細とエンドレコードを省いた JSON を出力できます。
+CSV として出力する場合は `--format csv` を指定します。CSV は `file_type`, `record_type`, `detail_index` と、各レコードのフィールドを持つレコード単位の表です。
+
+```bash
+cargo run -p zengin-cli -- --format csv --type request ./zengin.txt
+```
+
+ヘッダーとトレーラーだけを確認したい場合は、`--metadata-only` で明細とエンドレコードを省いた出力にできます。
 
 ```bash
 cargo run -p zengin-cli -- --metadata-only --type result ./zengin.txt

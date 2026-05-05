@@ -172,6 +172,92 @@ fn parses_input_file_to_json() {
 }
 
 #[test]
+fn parses_input_file_to_csv() {
+    let input_path = temp_input_path();
+    let input = to_bytes(&sample_file(), OutputFormat::readable()).unwrap();
+    fs::write(&input_path, input).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg("--format")
+        .arg("csv")
+        .arg("--type")
+        .arg("request")
+        .arg(&input_path)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_file(&input_path);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let rows = stdout
+        .trim_end()
+        .lines()
+        .map(|line| line.split(',').collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let header = &rows[0];
+    let column = |name: &str| {
+        header
+            .iter()
+            .position(|column| *column == name)
+            .unwrap_or_else(|| panic!("missing CSV column {name}"))
+    };
+
+    assert_eq!(rows.len(), 5);
+
+    let detail = rows
+        .iter()
+        .find(|row| row[column("record_type")] == "detail")
+        .expect("detail row");
+    assert_eq!(detail[column("file_type")], "account-transfer");
+    assert_eq!(detail[column("detail_index")], "1");
+    assert_eq!(detail[column("payer_name")], "ﾔﾏﾀﾞﾀﾛｳ");
+    assert_eq!(detail[column("amount")], "1200");
+    assert_eq!(detail[column("customer_number")], "00000000001234567890");
+
+    let trailer = rows
+        .iter()
+        .find(|row| row[column("record_type")] == "trailer")
+        .expect("trailer row");
+    assert_eq!(trailer[column("record_count")], "1");
+    assert_eq!(trailer[column("total_amount")], "1200");
+
+    assert!(rows.iter().any(|row| row[column("record_type")] == "end"));
+}
+
+#[test]
+fn csv_output_escapes_commas_and_quotes() {
+    let input_path = temp_input_path();
+    let mut file = sample_file();
+    file.details[0].payer_name = "ACME, \"INC\"".to_string();
+    let input = to_bytes(&file, OutputFormat::readable()).unwrap();
+    fs::write(&input_path, input).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zengin"))
+        .arg("--format=csv")
+        .arg("--type=request")
+        .arg(&input_path)
+        .output()
+        .unwrap();
+
+    let _ = fs::remove_file(&input_path);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("\"ACME, \"\"INC\"\"\""));
+}
+
+#[test]
 fn parses_result_file_to_json() {
     let input_path = temp_input_path();
     fs::write(&input_path, sample_result_input()).unwrap();
