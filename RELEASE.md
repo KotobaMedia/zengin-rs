@@ -45,26 +45,6 @@ Inspect metadata with:
 cargo metadata --no-deps --format-version 1
 ```
 
-## First-release Checks
-
-Verify the crate names are available before the first publish:
-
-```bash
-cargo info zengin-fmt
-cargo info zengin-cli
-cargo search zengin-fmt --limit 5
-cargo search zengin-cli --limit 5
-```
-
-Before the first publish, `cargo info` should report that the package is not found. Crate names are allocated first-come, first-served.
-
-Make sure the crates.io account is ready:
-
-- Log in to crates.io with GitHub.
-- Verify the account email.
-- Create an API token.
-- Run `cargo login`, or set `CARGO_REGISTRY_TOKEN` in CI.
-
 ## Preflight
 
 Start from a clean worktree:
@@ -82,6 +62,14 @@ cargo test --workspace --locked
 cargo doc --workspace --no-deps
 ```
 
+Make sure Cargo can authenticate to crates.io:
+
+```bash
+cargo login
+```
+
+In CI, set `CARGO_REGISTRY_TOKEN` instead.
+
 Inspect package contents. Check for missing README files, accidental fixtures, or any real banking/customer data:
 
 ```bash
@@ -93,13 +81,7 @@ cargo package --list -p zengin-cli
 
 `cargo-release` is dry-run by default. Run the exact release command without `--execute` first.
 
-For the first release, if `Cargo.toml` already contains the release version:
-
-```bash
-cargo release release --workspace
-```
-
-For future releases, use the intended bump or exact version:
+Use the intended bump or exact version:
 
 ```bash
 cargo release patch --workspace
@@ -118,18 +100,12 @@ Review the dry-run output for:
 
 ## Execute
 
-Run the same command with `--execute`.
-
-First release, when `Cargo.toml` already contains the release version:
-
-```bash
-cargo release release --workspace --execute
-```
-
-Future patch release:
+Run the same command with `--execute`:
 
 ```bash
 cargo release patch --workspace --execute
+cargo release minor --workspace --execute
+cargo release 0.2.0 --workspace --execute
 ```
 
 `cargo-release` will commit the release changes, publish the crates, create the tag, and push to `origin`.
@@ -171,7 +147,8 @@ cargo info zengin-cli
 Install the CLI from crates.io and smoke-test the binary:
 
 ```bash
-cargo install zengin-cli --version 0.1.0 --locked
+VERSION=0.2.0
+cargo install zengin-cli --version "$VERSION" --locked
 zengin --help
 ```
 
@@ -187,8 +164,8 @@ Published crate files cannot be deleted or overwritten. If a release is broken:
 4. Yank the broken version only if new users should stop selecting it:
 
    ```bash
-   cargo yank --version 0.1.0 zengin-fmt
-   cargo yank --version 0.1.0 zengin-cli
+   cargo yank --version X.Y.Z zengin-fmt
+   cargo yank --version X.Y.Z zengin-cli
    ```
 
 Yanking does not delete the crate and does not break existing lockfiles.
