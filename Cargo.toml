@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/zengin-rs", "crates/zengin-cli"]
+members = ["crates/zengin-fmt", "crates/zengin-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Parser and writer for Zengin fixed-width files"
-repository = "https://github.com/KotobaMedia/zengin-rs"
+repository = "https://github.com/KotobaMedia/zengin-fmt"
 
 [workspace.dependencies]
 doc-comment = "0.3"

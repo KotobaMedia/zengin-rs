@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use zengin_rs::{
+use zengin_fmt::{
     CodeDivision, OutputFormat,
     account_transfer::{Detail, End, File, Header, Trailer},
     to_bytes,

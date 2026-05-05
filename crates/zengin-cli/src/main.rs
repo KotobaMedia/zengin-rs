@@ -8,7 +8,7 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
-use zengin_rs::{FileType, ParsedFile, parse_as};
+use zengin_fmt::{FileType, ParsedFile, parse_as};
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024;
 

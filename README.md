@@ -6,18 +6,18 @@
 
 ## ワークスペース構成
 
-- `crates/zengin-rs`: パーサーとシリアライズを提供するライブラリ
+- `crates/zengin-fmt`: パーサーとシリアライズを提供するライブラリ
 - `crates/zengin-cli`: 全銀ファイルを読み込んで JSON を標準出力へ出す最小 CLI (`zengin`)
 
 ## 現在の実装範囲
 
-- `zengin_rs::general_transfer::{File, Header, Detail, Trailer, End}` (`種別コード 21`, 総合振込) を提供
-- `zengin_rs::payroll_transfer::{File, Header, Detail, Trailer, End}` (`種別コード 11/12/71/72`, 給与振込・賞与振込) を提供
-- `zengin_rs::account_transfer::{File, Header, Detail, Trailer, End}` を提供
-- `zengin_rs::account_transfer_result::{File, Header, Detail, Trailer, End}` を提供
-- `zengin_rs::transfer_account_inquiry::{File, Header, Detail, Trailer, End}` (`種別コード 98/99`, 振込口座照会) を提供
-- `zengin_rs::payment_notice::{File, Header, Detail, Trailer, End}` (`種別コード 01`, 振込入金通知) を提供
-- `zengin_rs::ParsedFile` と `zengin_rs::parse` / `parse_as` で対応ファイルを判別
+- `zengin_fmt::general_transfer::{File, Header, Detail, Trailer, End}` (`種別コード 21`, 総合振込) を提供
+- `zengin_fmt::payroll_transfer::{File, Header, Detail, Trailer, End}` (`種別コード 11/12/71/72`, 給与振込・賞与振込) を提供
+- `zengin_fmt::account_transfer::{File, Header, Detail, Trailer, End}` を提供
+- `zengin_fmt::account_transfer_result::{File, Header, Detail, Trailer, End}` を提供
+- `zengin_fmt::transfer_account_inquiry::{File, Header, Detail, Trailer, End}` (`種別コード 98/99`, 振込口座照会) を提供
+- `zengin_fmt::payment_notice::{File, Header, Detail, Trailer, End}` (`種別コード 01`, 振込入金通知) を提供
+- `zengin_fmt::ParsedFile` と `zengin_fmt::parse` / `parse_as` で対応ファイルを判別
 - `parse_*` 関数でファイル種別を明示して読み込み
 - `from_bytes` / `from_bytes_as` で固定長レコードを `serde` 経由で Rust 構造体に復元
 - `to_bytes` / `to_bytes_as` で Rust 構造体から固定長レコードを生成
@@ -65,7 +65,7 @@ zengin --type request ./zengin.txt
 ### 読み込み
 
 ```rust
-use zengin_rs::{CodeDivision, OutputFormat, account_transfer, parse_account_transfer, to_bytes};
+use zengin_fmt::{CodeDivision, OutputFormat, account_transfer, parse_account_transfer, to_bytes};
 
 # let sample = account_transfer::File {
 #     header: account_transfer::Header {
@@ -108,7 +108,7 @@ assert_eq!(file.details.len(), 1);
 assert_eq!(file.details[0].payer_name, "ﾔﾏﾀﾞﾀﾛｳ");
 assert_eq!(file.details[0].amount, 1200);
 
-# Ok::<(), zengin_rs::Error>(())
+# Ok::<(), zengin_fmt::Error>(())
 ```
 
 ### 書き込み
@@ -116,7 +116,7 @@ assert_eq!(file.details[0].amount, 1200);
 銀行へアップロードする送信用ファイルは `OutputFormat::canonical()` を使ってください。`OutputFormat::readable()` は確認用に改行を入れる形式です。
 
 ```rust
-use zengin_rs::{
+use zengin_fmt::{
     CodeDivision, OutputFormat, account_transfer,
     parse_account_transfer, to_bytes,
 };
@@ -161,5 +161,5 @@ let decoded = parse_account_transfer(&encoded)?;
 
 assert_eq!(decoded, file);
 
-# Ok::<(), zengin_rs::Error>(())
+# Ok::<(), zengin_fmt::Error>(())
 ```

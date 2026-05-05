@@ -246,11 +246,11 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
- "zengin-rs",
+ "zengin-fmt",
 ]
 
 [[package]]
-name = "zengin-rs"
+name = "zengin-fmt"
 version = "0.1.0"
 dependencies = [
  "doc-comment",
