@@ -275,8 +275,8 @@ fn csv_records(
         });
     }
 
-    if !metadata_only {
-        if let Some(serde_json::Value::Array(details)) = file.get("details") {
+    if !metadata_only
+        && let Some(serde_json::Value::Array(details)) = file.get("details") {
             for (index, detail) in details.iter().enumerate() {
                 records.push(CsvRecord {
                     record_type: "detail",
@@ -285,7 +285,6 @@ fn csv_records(
                 });
             }
         }
-    }
 
     if let Some(trailer) = file.get("trailer") {
         records.push(CsvRecord {
